@@ -40,6 +40,11 @@ class SettingsActivity : Activity() {
             true,
         ))
         root.addView(createFeatureSwitch(
+            R.string.fix_live_quality_url_title,
+            ModuleSettings.KEY_FIX_LIVE_QUALITY_URL_ENABLED,
+            false,
+        ))
+        root.addView(createFeatureSwitch(
             R.string.skip_mini_game_reward_ad_title,
             ModuleSettings.KEY_SKIP_MINI_GAME_REWARD_AD_ENABLED,
             true,
