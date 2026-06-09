@@ -31,7 +31,6 @@ apktransform {
 android {
     namespace = "io.github.bzzq"
     compileSdk = 35
-    buildToolsVersion = "36.0.0-rc4"
 
     defaultConfig {
         applicationId = "io.github.bzzq"
