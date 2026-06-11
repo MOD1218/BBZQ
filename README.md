@@ -94,7 +94,8 @@ app/build/outputs/apk/release/app-release.apk
 app/build/outputs/apk/release/bzzq_<version>.apk
 ```
 
-当前版本名由 `gradle.properties` 中的 `releaseName` 控制。
+当前版本名格式为 `v<releaseName>-<commitCount>`，
+其中 `releaseName` 来自 `gradle.properties`，`versionCode` 也仅跟随本地 commit 数增长。
 
 ## 项目特性
 

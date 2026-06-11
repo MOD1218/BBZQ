@@ -1,5 +1,4 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-
 plugins {
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.kotlin.android)
@@ -9,7 +8,20 @@ plugins {
     id("org.lsposed.lsplugin.apktransform") version "1.2" 
 }
 
-val releaseCode = jgit.repo()?.commitCount("refs/remotes/origin/main") ?: 1
+fun gitOutput(vararg args: String): String? {
+    return runCatching {
+        providers.exec {
+            commandLine("git", *args)
+        }
+            .standardOutput
+            .asText
+            .get()
+            .trim()
+            .takeIf { it.isNotEmpty() }
+    }.getOrNull()
+}
+
+val releaseCode = gitOutput("rev-list", "--count", "HEAD")?.toIntOrNull() ?: 1
 val releaseName: String by rootProject
 
 apksign {
@@ -22,7 +34,7 @@ apksign {
 apktransform {
     copy {
         when (it.buildType) {
-            "release" -> file("${it.name}/bzzq_${releaseName}.apk")
+            "release" -> file("${it.name}/bzzq_v${releaseName}-${releaseCode}.apk")
             else -> null
         }
     }
@@ -37,7 +49,7 @@ android {
         minSdk = 24
         targetSdk = 35
         versionCode = releaseCode
-        versionName = releaseName
+        versionName = "v${releaseName}-${releaseCode}"
 
         ndk {
             abiFilters += "arm64-v8a"
