@@ -21,4 +21,4 @@
 #-renamesourcefileattribute SourceFile
 
 # Xposed loads this class by name from assets/xposed_init.
--keep class io.github.biliviphz.ModuleEntrypoint { *; }
+-keep class io.github.bzzq.BzzqModule { *; }
