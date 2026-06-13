@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 object ModuleSettings {
     const val PREFS_NAME = "bzzq_settings"
     const val KEY_SKIP_SPLASH_AD_ENABLED = "skip_splash_ad_enabled"
+    const val KEY_SKIP_VIDEO_AD_ENABLED = "skip_video_ad_enabled"
     const val KEY_UNLOCK_VIDEO_FEATURES_ENABLED = "unlock_video_features_enabled"
     const val KEY_AUTO_LIKE_VIDEO_DETAIL_ENABLED = "auto_like_video_detail_enabled"
     const val KEY_FIX_LIVE_QUALITY_URL_ENABLED = "fix_live_quality_url_enabled"
@@ -20,6 +21,7 @@ object ModuleSettings {
     const val KEY_FULL_NUMBER_FORMAT_ENABLED = "full_number_format_enabled"
     const val KEY_UNLOCK_COMMENT_GIF_ENABLED = "unlock_comment_gif_enabled"
     const val KEY_LAST_ACCESS_KEY = "last_access_key"
+    const val KEY_DEXKIT_CACHE_GENERATION = "dexkit_cache_generation"
 
     const val KEY_TARGET_APP_VERSION = "target_app_version"
     const val CACHE_BILI_SETTINGS_ACTIVITY = "cache_settings_activity"
@@ -43,6 +45,9 @@ object ModuleSettings {
 
     fun isUnlockVideoFeaturesEnabled(prefs: SharedPreferences): Boolean =
         prefs.getBoolean(KEY_UNLOCK_VIDEO_FEATURES_ENABLED, true)
+
+    fun isSkipVideoAdEnabled(prefs: SharedPreferences): Boolean =
+        prefs.getBoolean(KEY_SKIP_VIDEO_AD_ENABLED, false)
 
     fun isAutoLikeVideoDetailEnabled(prefs: SharedPreferences): Boolean =
         prefs.getBoolean(KEY_AUTO_LIKE_VIDEO_DETAIL_ENABLED, false)

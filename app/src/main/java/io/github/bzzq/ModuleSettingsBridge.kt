@@ -91,12 +91,20 @@ class ModuleSettingsBridge private constructor() : SharedPreferences {
 
     override fun getLong(key: String?, defValue: Long): Long {
         ensureLoaded()
-        return (localCache[key] as? Number)?.toLong() ?: defValue
+        return when (val value = localCache[key]) {
+            is Number -> value.toLong()
+            is String -> value.toLongOrNull() ?: defValue
+            else -> defValue
+        }
     }
 
     override fun getFloat(key: String?, defValue: Float): Float {
         ensureLoaded()
-        return (localCache[key] as? Number)?.toFloat() ?: defValue
+        return when (val value = localCache[key]) {
+            is Number -> value.toFloat()
+            is String -> value.toFloatOrNull() ?: defValue
+            else -> defValue
+        }
     }
 
     override fun getBoolean(key: String?, defValue: Boolean): Boolean {
@@ -161,9 +169,21 @@ class ModuleSettingsBridge private constructor() : SharedPreferences {
             }
         }
 
-        override fun putLong(key: String?, value: Long): SharedPreferences.Editor = this
+        override fun putLong(key: String?, value: Long): SharedPreferences.Editor = apply {
+            operations += {
+                call(ModuleSettingsProvider.METHOD_PUT_STRING, key, Bundle().apply {
+                    putString(ModuleSettingsProvider.EXTRA_VALUE, value.toString())
+                })
+            }
+        }
 
-        override fun putFloat(key: String?, value: Float): SharedPreferences.Editor = this
+        override fun putFloat(key: String?, value: Float): SharedPreferences.Editor = apply {
+            operations += {
+                call(ModuleSettingsProvider.METHOD_PUT_STRING, key, Bundle().apply {
+                    putString(ModuleSettingsProvider.EXTRA_VALUE, value.toString())
+                })
+            }
+        }
 
         override fun putBoolean(key: String?, value: Boolean): SharedPreferences.Editor = apply {
             operations += {

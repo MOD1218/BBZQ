@@ -1,6 +1,8 @@
 package io.github.bzzq.hooks
 
 import com.tencent.mmkv.MMKV
+import io.github.bzzq.ModuleSettings
+import io.github.bzzq.ModuleSettingsBridge
 import org.luckypray.dexkit.DexKitBridge
 
 class DexKitCacheStore(
@@ -21,11 +23,21 @@ class DexKitCacheStore(
 
     fun ensureVersionState() {
         val cachedVersion = kv.getLong(KEY_VERSION_CODE, Long.MIN_VALUE)
-        if (cachedVersion == versionCode) return
+        val cachedSourceDir = kv.getString(KEY_SOURCE_DIR, null)
+        val cachedGeneration = kv.getInt(KEY_GENERATION, Int.MIN_VALUE)
+        val generation = readGeneration()
+        if (
+            cachedVersion == versionCode &&
+            cachedSourceDir == sourceDir &&
+            cachedGeneration == generation
+        ) {
+            return
+        }
 
         kv.clearAll()
         kv.putLong(KEY_VERSION_CODE, versionCode)
         kv.putString(KEY_SOURCE_DIR, sourceDir)
+        kv.putInt(KEY_GENERATION, generation)
     }
 
     fun readMethodCache(key: String): String = kv.getString(methodKey(key), "") ?: ""
@@ -73,8 +85,12 @@ class DexKitCacheStore(
 
     private fun classKey(name: String) = "class_$name"
 
+    private fun readGeneration(): Int =
+        ModuleSettingsBridge.instance.getInt(ModuleSettings.KEY_DEXKIT_CACHE_GENERATION, 0)
+
     companion object {
         private const val KEY_VERSION_CODE = "host_version_code"
         private const val KEY_SOURCE_DIR = "host_source_dir"
+        private const val KEY_GENERATION = "cache_generation"
     }
 }

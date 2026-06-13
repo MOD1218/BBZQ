@@ -65,12 +65,18 @@ class SettingsContentFactory(
                 summary = "复制当前登录账号最近一次抓到的 access_key。",
                 actionText = "复制",
             ) { copyAccessKey() },
+            createActionRow(
+                title = "清除 Hook 缓存",
+                summary = "下次启动哔哩哔哩时强制重新扫描 DexKit 缓存。",
+                actionText = "清除",
+            ) { clearHookCache() },
         )
     }
 
     private fun generalRows(): List<View> {
         return listOf(
             createSwitchRow("跳过开屏广告", "移除启动广告，减少等待时间。", ModuleSettings.KEY_SKIP_SPLASH_AD_ENABLED, true),
+            createSwitchRow("跳过视频广告", "播放时按 SponsorBlock 广告片段自动跳转。", ModuleSettings.KEY_SKIP_VIDEO_AD_ENABLED, false),
             createSwitchRow("解锁视频功能", "尝试放开部分试看限制和画质能力。", ModuleSettings.KEY_UNLOCK_VIDEO_FEATURES_ENABLED, true),
             createSwitchRow("视频详情页自动点赞", "进入视频详情页后自动点击点赞按钮。", ModuleSettings.KEY_AUTO_LIKE_VIDEO_DETAIL_ENABLED, false),
             createSwitchRow("直播画质修复", "修复直播画质链接异常或切换失败的问题。", ModuleSettings.KEY_FIX_LIVE_QUALITY_URL_ENABLED, false),
@@ -310,6 +316,12 @@ class SettingsContentFactory(
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("access_key", token))
         Toast.makeText(context, "已复制 access_key。", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun clearHookCache() {
+        val nextGeneration = prefs.getInt(ModuleSettings.KEY_DEXKIT_CACHE_GENERATION, 0) + 1
+        prefs.edit().putInt(ModuleSettings.KEY_DEXKIT_CACHE_GENERATION, nextGeneration).apply()
+        Toast.makeText(context, "已标记，下次启动哔哩哔哩时会重新扫描 Hook 缓存。", Toast.LENGTH_SHORT).show()
     }
 
     private fun selectableBackground(): Int {

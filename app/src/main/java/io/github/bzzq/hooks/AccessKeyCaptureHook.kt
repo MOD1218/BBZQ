@@ -7,6 +7,9 @@ import java.lang.reflect.Method
 class AccessKeyCaptureHook(
     targetPackageName: String,
 ) : BaseHook(targetPackageName) {
+    @Volatile
+    private var lastSavedKey: String? = null
+
     override fun startHook() {
         val methods = mutableSetOf<Method>()
         TOKEN_CLASSES.mapNotNull { HostAccess.findClass(classLoader, it) }
@@ -49,9 +52,10 @@ class AccessKeyCaptureHook(
             value.any(Char::isLetter)
 
     private fun save(value: String) {
-        if (prefs.getString(ModuleSettings.KEY_LAST_ACCESS_KEY, null) != value) {
-            prefs.edit().putString(ModuleSettings.KEY_LAST_ACCESS_KEY, value).apply()
-        }
+        if (lastSavedKey == value) return
+        lastSavedKey = value
+        prefs.edit().putString(ModuleSettings.KEY_LAST_ACCESS_KEY, value).apply()
+        log("access_key captured (length=${value.length})")
     }
 
     private companion object {
