@@ -62,7 +62,7 @@ class SettingsContentFactory(
         return listOf(
             createActionRow(
                 title = "复制 access_key",
-                summary = "复制当前登录账号最近一次抓到的 access_key。",
+                summary = "复制当前登录账号的 access_key。",
                 actionText = "复制",
             ) { copyAccessKey() },
             createActionRow(
@@ -307,9 +307,9 @@ class SettingsContentFactory(
         tagCheckBoxes.filterValues { it.isChecked }.keys.toSet()
 
     private fun copyAccessKey() {
-        val token = prefs.getString(ModuleSettings.KEY_LAST_ACCESS_KEY, null)
+        val token = AccessKeyRepository.read(prefs)
         if (token.isNullOrEmpty()) {
-            Toast.makeText(context, "未找到 access_key，请先在 Bilibili 内完成一次登录相关请求。", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "未找到 access_key，请确认当前账号已登录。", Toast.LENGTH_SHORT).show()
             return
         }
 

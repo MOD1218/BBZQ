@@ -1,67 +1,68 @@
 package io.github.bzzq.hooks
 
-import io.github.bzzq.ModuleSettings
-import io.github.libxposed.api.XposedInterface
+import android.content.Context
+import io.github.bzzq.AccessKeyRepository
 import java.lang.reflect.Method
+import java.lang.reflect.Modifier
 
 class AccessKeyCaptureHook(
     targetPackageName: String,
 ) : BaseHook(targetPackageName) {
-    @Volatile
-    private var lastSavedKey: String? = null
-
     override fun startHook() {
-        val methods = mutableSetOf<Method>()
-        TOKEN_CLASSES.mapNotNull { HostAccess.findClass(classLoader, it) }
-            .forEach { type ->
-                HostAccess.methods(type)
-                    .filter { it.parameterCount == 0 && it.returnType == String::class.java }
-                    .filterTo(methods) {
-                        it.name.contains("access", true) || it.name.contains("token", true)
-                    }
-            }
-
         val accountMarker = HostMethodResolver(context).resolve(
-            cacheKey = "bili_accounts_marker",
+            cacheKey = "bili_accounts_class_marker",
             fixedCandidates = { emptySequence() },
+            searchPackages = listOf("com.bilibili", "tv.danmaku"),
             usingStrings = listOf("logout with account exception"),
-            validate = { true },
+            validate = ::isAccountClassMarker,
         )
-        accountMarker?.declaringClass?.let { accountClass ->
-            HostAccess.methods(accountClass)
-                .filter { it.parameterCount == 0 && it.returnType == String::class.java }
-                .forEach(methods::add)
+        if (accountMarker == null) {
+            log("BiliAccounts class not found - access_key reader unavailable")
+            return
         }
 
-        methods.forEach { method ->
-            xposed.hook(method)
-                .setExceptionMode(XposedInterface.ExceptionMode.PASSTHROUGH)
-                .intercept { chain ->
-                    val result = chain.proceed()
-                    (result as? String)?.takeIf(::looksLikeAccessKey)?.let(::save)
-                    result
+        val accountClass = accountMarker.declaringClass
+        val getAccount = HostAccess.methods(accountClass).firstOrNull(::isAccountFactory)
+        if (getAccount == null) {
+            log("BiliAccounts factory not found - access_key reader unavailable")
+            return
+        }
+
+        val stringGetters = HostAccess.methods(accountClass)
+            .filter(::isStringGetter)
+            .sortedByDescending(::getterPriority)
+            .toList()
+        AccessKeyRepository.register {
+            val application = HostEnv.currentApplication() ?: return@register null
+            val account = runCatching { getAccount.invoke(null, application) }.getOrNull()
+                ?: return@register null
+            stringGetters.asSequence()
+                .mapNotNull { getter ->
+                    runCatching { getter.invoke(account) as? String }.getOrNull()
                 }
+                .firstOrNull(AccessKeyRepository::looksLikeAccessKey)
         }
-        log("Installed access_key capture on ${methods.size} method(s)")
+        AccessKeyRepository.read(prefs)
+        log("Installed live access_key reader at ${accountClass.name} (${stringGetters.size} getter candidates)")
     }
 
-    private fun looksLikeAccessKey(value: String): Boolean =
-        value.length in 24..128 &&
-            value.none(Char::isWhitespace) &&
-            value.any(Char::isDigit) &&
-            value.any(Char::isLetter)
+    private fun isAccountClassMarker(method: Method): Boolean =
+        method.parameterCount == 1 &&
+            HostAccess.methods(method.declaringClass).any(::isAccountFactory)
 
-    private fun save(value: String) {
-        if (lastSavedKey == value) return
-        lastSavedKey = value
-        prefs.edit().putString(ModuleSettings.KEY_LAST_ACCESS_KEY, value).apply()
-        log("access_key captured (length=${value.length})")
-    }
+    private fun isAccountFactory(method: Method): Boolean =
+        Modifier.isStatic(method.modifiers) &&
+            method.parameterTypes.contentEquals(arrayOf(Context::class.java)) &&
+            method.returnType == method.declaringClass
 
-    private companion object {
-        private val TOKEN_CLASSES = listOf(
-            "com.bilibili.nativelibrary.BiliBiliToken",
-            "com.bilibili.lib.login.model.AccessToken",
-        )
+    private fun isStringGetter(method: Method): Boolean =
+        !Modifier.isStatic(method.modifiers) &&
+            method.parameterCount == 0 &&
+            method.returnType == String::class.java
+
+    private fun getterPriority(method: Method): Int = when {
+        method.name.contains("access", ignoreCase = true) -> 2
+        method.name.contains("token", ignoreCase = true) -> 1
+        else -> 0
     }
 }
