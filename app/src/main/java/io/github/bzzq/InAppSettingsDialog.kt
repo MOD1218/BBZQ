@@ -10,12 +10,23 @@ import android.view.ViewGroup
 import android.view.Window
 import android.widget.LinearLayout
 import android.widget.TextView
+import java.lang.ref.WeakReference
 
 object InAppSettingsDialog {
+    private var currentDialogRef: WeakReference<Dialog>? = null
+
     fun show(
         activity: Activity,
         prefs: SharedPreferences = ModuleSettingsBridge.instance,
     ) {
+        if (activity.isFinishing || activity.isDestroyed) return
+
+        currentDialogRef?.get()?.let { dialog ->
+            if (dialog.isShowing) {
+                dialog.dismiss()
+            }
+        }
+
         val dialog = Dialog(activity, android.R.style.Theme_DeviceDefault_Light_NoActionBar)
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
 
@@ -36,6 +47,12 @@ object InAppSettingsDialog {
         dialog.window?.apply {
             setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             setBackgroundDrawable(ColorDrawable(Color.WHITE))
+        }
+        currentDialogRef = WeakReference(dialog)
+        dialog.setOnDismissListener {
+            if (currentDialogRef?.get() === dialog) {
+                currentDialogRef = null
+            }
         }
         dialog.show()
     }

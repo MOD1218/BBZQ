@@ -1,10 +1,11 @@
 package io.github.bzzq.hooks
 
 import android.app.Activity
+import android.app.Instrumentation
+import android.content.Intent
 import io.github.bzzq.InAppSettingsDialog
 import io.github.libxposed.api.XposedInterface
 import java.lang.reflect.Field
-import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 
 /**
@@ -156,23 +157,35 @@ class MinePageEntryHook(
 
     private fun hookRouter() {
         runCatching {
-            val startActivityMethod = Activity::class.java
-                .getDeclaredMethod("startActivity", android.content.Intent::class.java)
+            val startActivityMethods = Instrumentation::class.java.declaredMethods
+                .filter { method ->
+                    method.name == "execStartActivity" &&
+                        method.parameterTypes.any { it == Intent::class.java }
+                }
+                .distinctBy { it.toGenericString() }
 
-            xposed.hook(startActivityMethod)
-                .setExceptionMode(XposedInterface.ExceptionMode.PASSTHROUGH)
-                .intercept { chain ->
-                    val intent = chain.args[0] as? android.content.Intent
-                    if (intent?.data?.toString() == SETTINGS_URI) {
-                        val activity = chain.thisObject as? Activity
+            startActivityMethods.forEach { method ->
+                xposed.hook(method)
+                    .setExceptionMode(XposedInterface.ExceptionMode.PASSTHROUGH)
+                    .intercept { chain ->
+                        val intent = chain.args.firstNotNullOfOrNull { it as? Intent }
+                            ?: return@intercept chain.proceed()
+                        if (intent.data?.toString() != SETTINGS_URI) {
+                            return@intercept chain.proceed()
+                        }
+
+                        val activity = chain.args.firstNotNullOfOrNull { it as? Activity }
                             ?: return@intercept chain.proceed()
                         InAppSettingsDialog.show(activity)
-                        return@intercept Unit
+                        null
                     }
-                    chain.proceed()
-                }
+            }
 
-            log("Installed mine page router hook for URI: $SETTINGS_URI")
+            if (startActivityMethods.isEmpty()) {
+                log("Mine page router hook skipped: no execStartActivity overload found")
+            } else {
+                log("Installed mine page router hook for URI: $SETTINGS_URI")
+            }
         }.onFailure {
             log("Failed to install mine page router hook", it)
         }
