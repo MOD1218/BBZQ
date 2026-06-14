@@ -1,4 +1,4 @@
-# Add project specific ProGuard rules here.
+﻿# Add project specific ProGuard rules here.
 # You can control the set of applied configuration files using the
 # proguardFiles setting in build.gradle.
 #
@@ -21,4 +21,4 @@
 #-renamesourcefileattribute SourceFile
 
 # Xposed loads this class by name from assets/xposed_init.
--keep class io.github.bzzq.BzzqModule { *; }
+-keep class io.github.bbzq.BbzqModule { *; }

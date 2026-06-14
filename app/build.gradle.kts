@@ -1,4 +1,4 @@
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+﻿import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 plugins {
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.kotlin.android)
@@ -34,18 +34,18 @@ apksign {
 apktransform {
     copy {
         when (it.buildType) {
-            "release" -> file("${it.name}/bzzq_v${releaseName}-${releaseCode}.apk")
+            "release" -> file("${it.name}/bbzq_v${releaseName}-${releaseCode}.apk")
             else -> null
         }
     }
 }
 
 android {
-    namespace = "io.github.bzzq"
+    namespace = "io.github.bbzq"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "io.github.bzzq"
+        applicationId = "io.github.bbzq"
         minSdk = 24
         targetSdk = 35
         versionCode = releaseCode

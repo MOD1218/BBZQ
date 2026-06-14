@@ -1,7 +1,7 @@
 <resources>
-    <string name="app_name">bzzq</string>
-    <string name="settings_title">bzzq 模块设置</string>
-    <string name="xposed_description">面向哔哩哔哩客户端的轻量级 Xposed 模块，提供应用内高级设置、完整数字显示、广告净化与常用体验增强。</string>
+    <string name="app_name">BBZQ</string>
+    <string name="settings_title">BBZQ 设置</string>
+    <string name="xposed_description">基于 libxposed API 102 的 BBZQ 模块，提供分享净化、竖屏视频净化与常用体验增强。</string>
 
     <string name="intro_title">BBZQ</string>
     <string name="intro_module_title">模块信息</string>
@@ -9,12 +9,12 @@
     <string name="intro_desc_title">模块介绍</string>
     <string name="intro_desc_body">这是一个面向哔哩哔哩客户端的轻量级 Xposed 模块，提供广告净化、体验修补和一些常用增强功能。</string>
     <string name="intro_entry_title">如何进入设置</string>
-    <string name="intro_entry_body">请打开哔哩哔哩，进入“设置”页面后点击“高级设置”即可进入模块设置；部分旧版本仍可通过设置页里的兜底入口进入。</string>
+    <string name="intro_entry_body">请打开哔哩哔哩，进入 设置 页面后找到 高级设置 即可进入 BBZQ 设置。</string>
     <string name="intro_launcher_title">桌面入口说明</string>
     <string name="intro_launcher_body">桌面图标仅用于展示模块介绍，实际功能开关仍在应用内设置页中调整。</string>
 
     <string name="entry_title">高级设置</string>
-    <string name="entry_summary">BBZQ 模块设置</string>
+    <string name="entry_summary">BBZQ 设置</string>
 
     <string name="account_tools_section_title">账号工具</string>
     <string name="general_features_section_title">通用功能</string>

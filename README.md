@@ -1,16 +1,16 @@
-# bzzq
+# BBZQ
 
-`bzzq` 是一个基于 `libxposed API 101` 的 Android Xposed 模块，面向 Bilibili 客户端提供轻量的功能修补、广告净化和小型实用工具。
+BBZQ 是一个基于 `libxposed API 102` 的 Bilibili 模块，当前主线以 `api102` 入口、宿主内设置页和轻量 roaming hooks 为核心，重点放在可维护的模块启动流程与少量稳定功能。
 
-当前模块仅在以下框架环境中启用：
+## 当前状态
 
-- `NPatch`
-- `Vector`
-- `LSPosed` 版本码大于 `7700`
+- 模块入口已经切换到 `META-INF/xposed/java_init.list`
+- 运行时主入口为 `io.github.bbzq.BbzqModule`
+- 作用域使用静态声明
+- 当前设置入口不再使用对话框，而是打开完整的 `SettingsActivity`
+- 项目识别统一为 `BBZQ / bbzq`
 
-若不满足上述条件，模块会在载入后保持停用，不向目标应用安装 hook。
-
-## 目标包名
+## 支持的目标包
 
 ```text
 tv.danmaku.bili
@@ -19,103 +19,101 @@ tv.danmaku.bilibilihd
 com.bilibili.app.blue
 ```
 
-## 当前功能
+## 当前已接入功能
 
-- 跳过开屏广告
-- 解锁部分视频功能
-- 视频详情页自动点赞
-- 修正直播画质 URL
-- 跳过小游戏奖励广告
-- 屏蔽直播预约卡片
+当前 `api102` 主线实际挂载的 hooks 以 [RoamingRuntime.kt](/E:/GitHubRepo/BiliVIPhz/app/src/main/java/io/github/bbzq/roaming/RoamingRuntime.kt:1) 为准：
+
+- 设置入口注入
+  在 Bilibili 设置页注入“高级设置”，点击后打开模块自己的设置页面
+- 净化分享
+  将 `b23.tv` / `bili2233.cn` 短链还原为普通链接，并尽量保留 `p`、`t` 等定位参数
+- 普通链接分享
+  关闭小程序式分享时，尽量将分享结果转成更普通的链接形式
+- 跳过视频激励广告
+  针对 `RewardAdActivity` 做轻量处理
 - 净化竖屏视频广告
-- 复制最近捕获到的 `access_key`
-- 在 Bilibili 的“其它设置”页注入 `bzzq` 模块设置入口
+  按标签过滤广告、购物、短剧、电视剧、纪录片、娱乐、电影、音乐、话题等内容
 
-## 模块设置
+## 当前设置页
 
-模块设置页会显示所有当前已接入的功能，包括默认启用的项目。
+当前设置页为宿主内页面式 UI，风格保持 BBZQ 现有卡片布局，不使用设置对话框。页面目前分为三组：
 
-当前默认开启的功能：
+- 分享与链接
+  `净化分享`
+  `普通链接分享`
+- 播放净化
+  `跳过视频激励广告`
+- 竖屏视频净化
+  `净化竖屏视频广告`
+  标签筛选
+  拦截统计
 
-- 跳过开屏广告
-- 解锁视频功能
-- 跳过小游戏奖励广告
-
-其余功能默认关闭，需要手动开启。
+对应实现位于 [SettingsContentFactory.kt](/E:/GitHubRepo/BiliVIPhz/app/src/main/java/io/github/bbzq/SettingsContentFactory.kt:1)。
 
 ## 使用方式
 
-1. 安装并启用受支持的 Xposed 框架。
-2. 安装本模块 APK。
-3. 在框架管理器中启用本模块。
-4. 将作用域授予目标 Bilibili 应用。
-5. 重启目标应用。
+1. 安装模块 APK。
+2. 在支持 `libxposed API 102` 的框架中启用模块。
+3. 给目标 Bilibili 应用授予作用域。
+4. 重启目标应用。
+5. 打开 Bilibili 设置页，进入模块注入的“高级设置”。
 
-启用后，可通过以下方式打开模块设置：
-
-- 桌面上的 `bzzq` 启动图标
-- Bilibili `设置 -> 其它设置 -> bzzq`
-
-如果未看到内部入口，通常说明当前客户端版本的设置页结构与已适配版本不同，需要继续调整 hook。
+桌面图标对应的是模块自己的介绍页，不是单独的调试工具。
 
 ## 构建
 
-### 环境要求
+环境要求：
 
 - JDK `21`
 - Android Gradle Plugin `8.13.1`
 - Kotlin `2.3.21`
 - Gradle Wrapper `8.14.4`
 
-### Debug 构建
+Debug 构建：
 
 ```powershell
 .\gradlew.bat assembleDebug
 ```
 
-输出文件：
+输出：
 
 ```text
 app/build/outputs/apk/debug/app-debug.apk
 ```
 
-### Release 构建
-
-`release` 也属于正式支持的构建产物，不只是 `debug`。
+Release 构建：
 
 ```powershell
 .\gradlew.bat assembleRelease
 ```
 
-若已在 `gradle.properties` / 本地环境中配置签名参数，构建完成后会生成 release APK，并额外复制一份带版本号的产物：
+若已配置签名参数，构建后会生成：
 
 ```text
 app/build/outputs/apk/release/app-release.apk
-app/build/outputs/apk/release/bzzq_<version>.apk
+app/build/outputs/apk/release/bbzq_v<releaseName>-<commitCount>.apk
 ```
 
-当前版本名格式为 `v<releaseName>-<commitCount>`，
-其中 `releaseName` 来自 `gradle.properties`，`versionCode` 也仅跟随本地 commit 数增长。
+## 项目结构
 
-## 项目特性
+- [app/src/main/java/io/github/bbzq/BbzqModule.kt](/E:/GitHubRepo/BiliVIPhz/app/src/main/java/io/github/bbzq/BbzqModule.kt:1)
+  `libxposed API 102` 模块入口
+- [app/src/main/java/io/github/bbzq/roaming/](/E:/GitHubRepo/BiliVIPhz/app/src/main/java/io/github/bbzq/roaming)
+  `api102` 反射与 hook helper、runtime、核心 roaming hooks
+- [app/src/main/java/io/github/bbzq/SettingsActivity.kt](/E:/GitHubRepo/BiliVIPhz/app/src/main/java/io/github/bbzq/SettingsActivity.kt:1)
+  模块设置页 Activity
+- [app/src/main/java/io/github/bbzq/ModuleSettingsProvider.kt](/E:/GitHubRepo/BiliVIPhz/app/src/main/java/io/github/bbzq/ModuleSettingsProvider.kt:1)
+  模块与宿主进程之间的设置桥接入口
 
-- 使用 `libxposed API 101`
-- 使用静态 scope 声明目标包名
-- 使用 Java/Kotlin `21`
-- `libxposed api` 以 `compileOnly` 方式引入
-- 主要通过反射和动态 hook 适配客户端结构变化
+## 已知限制
 
-## 兼容性说明
-
-- 这是一个针对 Bilibili 客户端行为做修改的 Xposed 模块，兼容性会受到 App 版本、混淆变化和框架实现影响。
-- 某些 hook 失效时，通常是类名、方法签名或字段结构发生变化，不一定代表整个模块不可用。
-- “其它设置”入口采用了参考 `BiliRoaming` / `BiliRoamingX` 的注入思路，但不同版本客户端的设置页结构并不完全一致。
+- README 只描述当前已经接上 `api102` 主线的功能，不代表旧 `hooks/` 目录里的所有历史能力都仍在实际挂载。
+- 直播画质、番剧解析等更重的 roaming 功能目前没有完整迁回 `api102` 主线。
+- 设置入口依赖宿主设置页结构，Bilibili 更新后可能需要重新适配。
+- 目前仍保留 `io.github.bbzq` 这一包名作为模块识别，不再使用旧的 `bzzq` 拼写。
 
 ## 授权
 
 本项目使用木兰公共许可证第 2 版（Mulan PubL v2）。
 
-完整授权内容见 [LICENSE](LICENSE)。
-官方文本请参考：
-
-<http://license.coscl.org.cn/MulanPubL-2.0>
+完整授权见 [LICENSE](/E:/GitHubRepo/BiliVIPhz/LICENSE)。

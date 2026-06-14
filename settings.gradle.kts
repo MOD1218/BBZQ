@@ -1,4 +1,4 @@
-include(":app")
+﻿include(":app")
 buildCache { local { removeUnusedEntriesAfterDays = 1 } }
 pluginManagement {
     repositories {
@@ -15,4 +15,4 @@ dependencyResolutionManagement {
         maven(url = "https://api.xposed.info")
     }
 }
-rootProject.name = "bzzq"
+rootProject.name = "bbzq"
