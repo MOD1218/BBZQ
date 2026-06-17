@@ -6,6 +6,7 @@ import io.github.bbzq.ModuleSettingsBridge
 import io.github.bbzq.roaming.hook.BottomBarHook
 import io.github.bbzq.roaming.hook.FreeCopyHook
 import io.github.bbzq.roaming.hook.HomeRecommendAdHook
+import io.github.bbzq.roaming.hook.HomeRecommendAutoRefreshHook
 import io.github.bbzq.roaming.hook.RewardAdHook
 import io.github.bbzq.roaming.hook.SettingHook
 import io.github.bbzq.roaming.hook.ShareHook
@@ -51,6 +52,7 @@ object RoamingRuntime {
                 ::FreeCopyHook,
                 ::BottomBarHook,
                 ::HomeRecommendAdHook,
+                ::HomeRecommendAutoRefreshHook,
                 ::StoryPlayerAdHook,
                 ::VideoDetailBannerAdHook,
                 ::SkipVideoAdHook,

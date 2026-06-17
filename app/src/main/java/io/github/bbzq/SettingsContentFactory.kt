@@ -127,6 +127,12 @@ class SettingsContentFactory(
                 ModuleSettings.KEY_PURIFY_HOME_RECOMMEND_AD_ENABLED,
                 false,
             ),
+            createSwitchRow(
+                "阻止首页推荐自动刷新",
+                "阻止冷启动、长时间后台回到前台或从其他页面返回时自动刷新推荐流，保留手动刷新。",
+                ModuleSettings.KEY_BLOCK_HOME_RECOMMEND_AUTO_REFRESH_ENABLED,
+                false,
+            ),
         )
     }
 
