@@ -45,6 +45,9 @@ class SettingsContentFactory(
         page.addView(createSectionLabel("启动净化"))
         page.addView(createSectionCard(startupRows()))
 
+        page.addView(createSectionLabel("首页推荐净化"))
+        page.addView(createSectionCard(homeRecommendRows()))
+
         page.addView(createSectionLabel("界面定制"))
         page.addView(createSectionCard(bottomBarRows()))
 
@@ -112,6 +115,17 @@ class SettingsContentFactory(
                 "清理启动时的开屏广告响应，减少进入 BBZQ 作用目标时的等待。",
                 ModuleSettings.KEY_SKIP_SPLASH_AD_ENABLED,
                 true,
+            ),
+        )
+    }
+
+    private fun homeRecommendRows(): List<View> {
+        return listOf(
+            createSwitchRow(
+                "移除首页推荐宽屏广告",
+                "过滤首页推荐流中的大横幅和宽屏广告卡片。",
+                ModuleSettings.KEY_PURIFY_HOME_RECOMMEND_AD_ENABLED,
+                false,
             ),
         )
     }

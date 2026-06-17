@@ -12,6 +12,7 @@ object ModuleSettings {
     const val KEY_UNLOCK_VIDEO_FEATURES_ENABLED = "unlock_video_features_enabled"
     const val KEY_AUTO_LIKE_VIDEO_DETAIL_ENABLED = "auto_like_video_detail_enabled"
     const val KEY_FIX_LIVE_QUALITY_URL_ENABLED = "fix_live_quality_url_enabled"
+    const val KEY_PURIFY_HOME_RECOMMEND_AD_ENABLED = "purify_home_recommend_ad_enabled"
     const val KEY_PURIFY_STORY_VIDEO_AD_ENABLED = "purify_story_video_ad_enabled"
     const val KEY_PURIFY_STORY_VIDEO_AD_TAGS = "purify_story_video_ad_tags"
     const val KEY_PURIFY_STORY_VIDEO_AD_BLOCKED_COUNT = "purify_story_video_ad_blocked_count"
@@ -58,6 +59,9 @@ object ModuleSettings {
 
     fun isFixLiveQualityUrlEnabled(prefs: SharedPreferences): Boolean =
         prefs.getBoolean(KEY_FIX_LIVE_QUALITY_URL_ENABLED, false)
+
+    fun isPurifyHomeRecommendAdEnabled(prefs: SharedPreferences): Boolean =
+        prefs.getBoolean(KEY_PURIFY_HOME_RECOMMEND_AD_ENABLED, false)
 
     fun isPurifyStoryVideoAdEnabled(prefs: SharedPreferences): Boolean =
         prefs.getBoolean(KEY_PURIFY_STORY_VIDEO_AD_ENABLED, false)
