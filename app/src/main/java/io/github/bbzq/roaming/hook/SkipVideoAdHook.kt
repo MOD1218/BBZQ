@@ -39,14 +39,8 @@ class SkipVideoAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
     override fun startHook() {
         val count = hookPlayViewUnite() + hookPlayerCoreService()
         log("startHook: SkipVideoAd, methods=$count")
-        if (isEnabled()) {
-            toast(
-                if (count > 0) {
-                    "\u8df3\u8fc7\u89c6\u9891\u5e7f\u544a\u5df2\u52a0\u8f7d"
-                } else {
-                    "\u8df3\u8fc7\u89c6\u9891\u5e7f\u544a\u672a\u627e\u5230\u64ad\u653e\u5668\u63a5\u53e3"
-                },
-            )
+        if (isEnabled() && count == 0 && env.processName == env.packageName) {
+            toast("\u8df3\u8fc7\u89c6\u9891\u5e7f\u544a\u672a\u627e\u5230\u64ad\u653e\u5668\u63a5\u53e3")
         }
     }
 
@@ -214,7 +208,6 @@ class SkipVideoAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
         val serviceInterface = PLAYER_CORE_SERVICE_INTERFACE.from(classLoader)
         val candidates = linkedSetOf<Class<*>>()
 
-        serviceInterface?.let { candidates += it }
         PLAYER_CORE_SERVICE_CANDIDATES.mapNotNullTo(candidates) { it.from(classLoader) }
 
         dexClassNames()
@@ -272,7 +265,6 @@ class SkipVideoAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
 
         loadingSegments = true
         segmentsKey = key
-        toast("\u6b63\u5728\u52a0\u8f7d\u5e7f\u544a\u7247\u6bb5")
         Thread {
             var loaded: List<BilibiliSponsorBlock.Segment>? = null
             for (attempt in 0 until 3) {
@@ -283,10 +275,8 @@ class SkipVideoAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
 
             if (key == videoKey()) {
                 segments = loaded
-                when {
-                    loaded == null -> toast("\u5e7f\u544a\u7247\u6bb5\u6570\u636e\u83b7\u53d6\u5931\u8d25")
-                    loaded.isEmpty() -> toast("\u672a\u627e\u5230\u5e7f\u544a\u7247\u6bb5")
-                    else -> toast("\u5df2\u52a0\u8f7d ${loaded.size} \u6bb5\u5e7f\u544a\u7247\u6bb5")
+                if (loaded == null) {
+                    toast("\u5e7f\u544a\u7247\u6bb5\u6570\u636e\u83b7\u53d6\u5931\u8d25")
                 }
             }
             loadingSegments = false
@@ -308,7 +298,6 @@ class SkipVideoAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
             val start = (segment.segment[0] * 1000).toInt()
             val end = (segment.segment[1] * 1000).toInt()
             if (position in start until end) {
-                toast("\u5df2\u8df3\u8fc7\u5e7f\u544a\u7247\u6bb5")
                 seekPlayerTo(end)
                 return true
             }
