@@ -32,6 +32,19 @@ object ModuleSettings {
 
     const val KEY_TARGET_APP_VERSION = "target_app_version"
     const val CACHE_BILI_SETTINGS_ACTIVITY = "cache_settings_activity"
+    const val KEY_RUNTIME_HOST_PACKAGE = "runtime_host_package"
+    const val KEY_RUNTIME_HOST_VERSION_NAME = "runtime_host_version_name"
+    const val KEY_RUNTIME_HOST_VERSION_CODE = "runtime_host_version_code"
+    const val KEY_RUNTIME_HOST_SOURCE_KIND = "runtime_host_source_kind"
+    const val KEY_RUNTIME_XPOSED_API_VERSION = "runtime_xposed_api_version"
+    const val KEY_RUNTIME_XPOSED_FRAMEWORK_NAME = "runtime_xposed_framework_name"
+    const val KEY_RUNTIME_XPOSED_FRAMEWORK_VERSION = "runtime_xposed_framework_version"
+    const val KEY_RUNTIME_XPOSED_FRAMEWORK_VERSION_CODE = "runtime_xposed_framework_version_code"
+    const val KEY_RUNTIME_XPOSED_FRAMEWORK_PROPERTIES = "runtime_xposed_framework_properties"
+    const val KEY_RUNTIME_KIND = "runtime_kind"
+    const val KEY_RUNTIME_PATCH_MODE = "runtime_patch_mode"
+    const val KEY_RUNTIME_PROCESS_NAME = "runtime_process_name"
+    const val KEY_RUNTIME_LAST_UPDATE_TIME = "runtime_last_update_time"
 
     val defaultStoryVideoAdTags = setOf("ad")
 

@@ -1,5 +1,6 @@
 ﻿package io.github.bbzq
 
+import android.app.AlertDialog
 import android.content.Context
 import android.content.SharedPreferences
 import android.graphics.Color
@@ -55,6 +56,9 @@ class SettingsContentFactory(
 
         page.addView(createSectionLabel("竖屏视频净化"))
         page.addView(createSectionCard(storyRows()))
+
+        page.addView(createSectionLabel("关于"))
+        page.addView(createSectionCard(aboutRows()))
 
         return ScrollView(context).apply {
             setBackgroundColor(PAGE_BACKGROUND)
@@ -198,6 +202,16 @@ class SettingsContentFactory(
         return rows
     }
 
+    private fun aboutRows(): List<View> =
+        listOf(
+            createClickableInfoRow(
+                "版本",
+                RuntimeEnvironmentInfo.versionSummary(context, prefs),
+            ) {
+                showRuntimeEnvironmentDialog()
+            },
+        )
+
     private fun createSectionLabel(text: String): TextView {
         return TextView(context).apply {
             this.text = text
@@ -252,6 +266,14 @@ class SettingsContentFactory(
                 setTextColor(SUMMARY_COLOR)
                 setPadding(0, dp(4), 0, 0)
             })
+        }
+    }
+
+    private fun createClickableInfoRow(title: String, summary: String, onClick: () -> Unit): View {
+        return createInfoRow(title, summary).apply {
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { onClick() }
         }
     }
 
@@ -413,6 +435,31 @@ class SettingsContentFactory(
 
     private fun hiddenBottomBarItemIds(): Set<String> =
         bottomBarItemCheckBoxes.filterValues { !it.isChecked }.keys.toSet()
+
+    private fun showRuntimeEnvironmentDialog() {
+        val content = TextView(context).apply {
+            text = RuntimeEnvironmentInfo.runtimeEnvironmentJson(context, prefs)
+            textSize = 12f
+            typeface = Typeface.MONOSPACE
+            setTextColor(TITLE_COLOR)
+            setTextIsSelectable(true)
+            setPadding(dp(18), dp(14), dp(18), dp(14))
+        }
+        val scroll = ScrollView(context).apply {
+            addView(
+                content,
+                ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+        }
+        AlertDialog.Builder(context)
+            .setTitle("runtimeEnvironment")
+            .setView(scroll)
+            .setPositiveButton("确定", null)
+            .show()
+    }
 
     private fun bottomBarItems(): List<BottomBarItem> =
         ModuleSettings.getKnownBottomBarItems(prefs)

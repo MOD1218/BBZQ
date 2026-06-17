@@ -1,6 +1,7 @@
 ﻿package io.github.bbzq
 
 import android.app.Activity
+import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import android.view.Gravity
@@ -24,6 +25,7 @@ class SettingsActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         requestWindowFeature(Window.FEATURE_NO_TITLE)
+        RuntimeEnvironmentInfo.applyRuntimeSnapshotFromIntent(intent, prefs)
 
         val toolbar = createToolbar()
         val content = SettingsContentFactory(this, prefs).createScrollView()
@@ -42,6 +44,12 @@ class SettingsActivity : Activity() {
 
         setContentView(root)
         applyWindowInsets(root, toolbar, content)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        RuntimeEnvironmentInfo.applyRuntimeSnapshotFromIntent(intent, prefs)
     }
 
     private fun createToolbar(): LinearLayout {

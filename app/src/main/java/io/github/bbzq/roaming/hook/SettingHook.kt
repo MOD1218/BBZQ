@@ -2,6 +2,7 @@
 
 import android.app.Activity
 import io.github.bbzq.ModuleSettingsNavigator
+import io.github.bbzq.RuntimeEnvironmentInfo
 import io.github.bbzq.roaming.BaseRoamingHook
 import io.github.bbzq.roaming.RoamingEnv
 import io.github.bbzq.roaming.callMethod
@@ -68,7 +69,7 @@ class SettingHook(env: RoamingEnv) : BaseRoamingHook(env) {
         val listenerType = setter.parameterTypes[0]
         val listener = Proxy.newProxyInstance(listenerType.classLoader, arrayOf(listenerType)) { _, method, _ ->
             if (method.name == "onPreferenceClick") {
-                ModuleSettingsNavigator.open(activity)
+                ModuleSettingsNavigator.open(activity, runtimeSnapshot())
                 true
             } else {
                 null
@@ -77,6 +78,17 @@ class SettingHook(env: RoamingEnv) : BaseRoamingHook(env) {
         setter.invoke(preference, listener)
         return preference
     }
+
+    private fun runtimeSnapshot() =
+        RuntimeEnvironmentInfo.runtimeSnapshotBundle(
+            hostContext = env.hostContext,
+            processName = env.processName,
+            xposedApiVersion = runCatching { xposed.apiVersion.toString() }.getOrDefault("unknown"),
+            xposedFrameworkName = runCatching { xposed.frameworkName }.getOrDefault("unknown"),
+            xposedFrameworkVersion = runCatching { xposed.frameworkVersion }.getOrDefault("unknown"),
+            xposedFrameworkVersionCode = runCatching { xposed.frameworkVersionCode.toString() }.getOrDefault("unknown"),
+            xposedFrameworkProperties = runCatching { xposed.frameworkProperties.toString() }.getOrDefault("unknown"),
+        )
 
     private fun resolveAnchorOrder(fragment: Any): Int? {
         return ANCHOR_KEYS.firstNotNullOfOrNull { key ->

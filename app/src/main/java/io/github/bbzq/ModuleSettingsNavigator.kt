@@ -4,12 +4,14 @@ import android.app.Activity
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.os.Bundle
 import android.widget.Toast
 
 object ModuleSettingsNavigator {
-    fun open(context: Context) {
+    fun open(context: Context, runtimeValues: Bundle? = null) {
         val intent = Intent().apply {
             component = ComponentName(MODULE_PACKAGE, SETTINGS_ACTIVITY)
+            runtimeValues?.let { putExtra(RuntimeEnvironmentInfo.EXTRA_RUNTIME_VALUES, it) }
             addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
             if (context !is Activity) {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
