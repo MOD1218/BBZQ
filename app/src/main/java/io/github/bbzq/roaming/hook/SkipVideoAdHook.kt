@@ -24,7 +24,7 @@ import java.util.Locale
 class SkipVideoAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
     @Volatile private var lastSeekTime = 0L
     @Volatile private var duration = -1
-    @Volatile private var segments: List<BilibiliSponsorBlock.Segment>? = null
+    @Volatile private var segments: List<BilibiliSponsorBlock.Segment> = emptyList()
     @Volatile private var segmentsKey = ""
     @Volatile private var loadingSegments = false
     @Volatile private var bvid = ""
@@ -116,7 +116,7 @@ class SkipVideoAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
         bvid = nextBvid
         cid = nextCid
         duration = -1
-        segments = null
+        segments = emptyList()
         segmentsKey = ""
         loadingSegments = false
         waitTime = 1000L
@@ -191,7 +191,7 @@ class SkipVideoAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
                     }
                     if (state == 2) {
                         duration = -1
-                        segments = null
+                        segments = emptyList()
                         segmentsKey = ""
                         fetchSegmentsIfNeeded()
                     }
@@ -266,17 +266,33 @@ class SkipVideoAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
         loadingSegments = true
         segmentsKey = key
         Thread {
-            var loaded: List<BilibiliSponsorBlock.Segment>? = null
+            val enabledCategories = ModuleSettings.getSkipVideoAdCategories(prefs)
+            var result = BilibiliSponsorBlock.FetchResult(
+                status = BilibiliSponsorBlock.FetchStatus.FAILED,
+                segments = emptyList(),
+            )
             for (attempt in 0 until 3) {
-                loaded = BilibiliSponsorBlock(currentBvid, currentCid).getSegments()
-                if (!loaded.isNullOrEmpty()) break
+                result = BilibiliSponsorBlock(currentBvid, currentCid, enabledCategories).getSegments()
+                if (result.status != BilibiliSponsorBlock.FetchStatus.FAILED) break
                 if (attempt < 2) Thread.sleep(1000)
             }
 
             if (key == videoKey()) {
-                segments = loaded
-                if (loaded == null) {
-                    toast("\u5e7f\u544a\u7247\u6bb5\u6570\u636e\u83b7\u53d6\u5931\u8d25")
+                segments = result.segments
+                when (result.status) {
+                    BilibiliSponsorBlock.FetchStatus.SUCCESS -> {
+                        log("SkipVideoAd loaded ${result.segments.size} segment(s) for $key")
+                        if (result.segments.isNotEmpty()) {
+                            toast("\u5df2\u52a0\u8f7d ${result.segments.size} \u4e2a\u7a7a\u964d\u7247\u6bb5")
+                        }
+                    }
+                    BilibiliSponsorBlock.FetchStatus.EMPTY,
+                    BilibiliSponsorBlock.FetchStatus.NOT_FOUND -> {
+                        log("SkipVideoAd found no skippable segments for $key")
+                    }
+                    BilibiliSponsorBlock.FetchStatus.FAILED -> {
+                        toast("\u5e7f\u544a\u7247\u6bb5\u6570\u636e\u83b7\u53d6\u5931\u8d25")
+                    }
                 }
             }
             loadingSegments = false
@@ -294,7 +310,7 @@ class SkipVideoAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
         val videoDuration = duration
         if (videoDuration > 0 && position > videoDuration) return false
 
-        segments.orEmpty().forEach { segment ->
+        segments.forEach { segment ->
             val start = (segment.segment[0] * 1000).toInt()
             val end = (segment.segment[1] * 1000).toInt()
             if (position in start until end) {
