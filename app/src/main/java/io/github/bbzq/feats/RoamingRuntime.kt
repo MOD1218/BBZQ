@@ -6,6 +6,7 @@ import io.github.bbzq.ModuleSettingsBridge
 import io.github.bbzq.feats.hook.BottomBarHook
 import io.github.bbzq.feats.hook.AutoLikeHook
 import io.github.bbzq.feats.hook.AccessKeyHook
+import io.github.bbzq.feats.hook.DownloadThreadHook
 import io.github.bbzq.feats.hook.TeenagersModeHook
 import io.github.bbzq.feats.hook.FreeCopyHook
 import io.github.bbzq.feats.hook.HomeRecommendAdHook
@@ -47,7 +48,9 @@ object RoamingRuntime {
                 ::RewardAdHook,
             )
 
-            processName.endsWith(":download") -> emptyList()
+            processName.endsWith(":download") -> listOf(
+                ::DownloadThreadHook,
+            )
 
             else -> listOf(
                 ::SettingHook,

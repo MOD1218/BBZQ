@@ -23,6 +23,8 @@ object ModuleSettings {
     const val KEY_PURIFY_STORY_VIDEO_AD_ENABLED = "purify_story_video_ad_enabled"
     const val KEY_PURIFY_STORY_VIDEO_AD_TAGS = "purify_story_video_ad_tags"
     const val KEY_PURIFY_STORY_VIDEO_AD_BLOCKED_COUNT = "purify_story_video_ad_blocked_count"
+    const val KEY_CUSTOM_DOWNLOAD_THREAD_ENABLED = "custom_download_thread_enabled"
+    const val KEY_CUSTOM_DOWNLOAD_CONCURRENCY = "custom_download_concurrency"
     const val KEY_SKIP_MINI_GAME_REWARD_AD_ENABLED = "skip_mini_game_reward_ad_enabled"
     const val KEY_BLOCK_LIVE_RESERVATION_ENABLED = "block_live_reservation_enabled"
     const val KEY_BLOCK_LIVE_ROOM_QOE_POPUP_ENABLED = "block_live_room_qoe_popup_enabled"
@@ -132,6 +134,12 @@ object ModuleSettings {
     fun getPurifyStoryVideoAdTags(prefs: SharedPreferences): Set<String> =
         prefs.getStringSet(KEY_PURIFY_STORY_VIDEO_AD_TAGS, defaultStoryVideoAdTags)
             ?: defaultStoryVideoAdTags
+
+    fun isCustomDownloadThreadEnabled(prefs: SharedPreferences): Boolean =
+        prefs.getBoolean(KEY_CUSTOM_DOWNLOAD_THREAD_ENABLED, false)
+
+    fun getCustomDownloadConcurrency(prefs: SharedPreferences): Int =
+        prefs.getInt(KEY_CUSTOM_DOWNLOAD_CONCURRENCY, 1).coerceIn(1, 12)
 
     fun isSkipMiniGameRewardAdEnabled(prefs: SharedPreferences): Boolean =
         prefs.getBoolean(KEY_SKIP_MINI_GAME_REWARD_AD_ENABLED, true)

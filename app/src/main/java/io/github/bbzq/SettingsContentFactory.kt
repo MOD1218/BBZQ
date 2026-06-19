@@ -15,6 +15,7 @@ import android.view.ViewGroup
 import android.widget.CheckBox
 import android.widget.CompoundButton
 import android.widget.LinearLayout
+import android.widget.NumberPicker
 import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
@@ -68,6 +69,9 @@ class SettingsContentFactory(
 
                 pageRoot.addView(createSectionLabel("启动净化"))
                 pageRoot.addView(createSectionCard(startupRows()))
+
+                pageRoot.addView(createSectionLabel("下载功能"))
+                pageRoot.addView(createSectionCard(downloadRows()))
 
                 pageRoot.addView(createSectionLabel("首页推荐净化"))
                 pageRoot.addView(createSectionCard(homeRecommendRows()))
@@ -152,6 +156,23 @@ class SettingsContentFactory(
                 false,
             ),
         )
+    }
+
+    private fun downloadRows(): List<View> {
+        val rows = mutableListOf<View>()
+        rows += createSwitchRow(
+                "自定义下载线程",
+                "开启后在下载设置里显示“自定义下载线程”，与原有线程数选项分开。",
+                ModuleSettings.KEY_CUSTOM_DOWNLOAD_THREAD_ENABLED,
+                false,
+            )
+        rows += createClickableInfoRow(
+            "自定义同时缓存数",
+            "当前值：${ModuleSettings.getCustomDownloadConcurrency(prefs)}。点击调整自定义模式下的同时缓存数。",
+        ) {
+            showCustomDownloadConcurrencyDialog()
+        }
+        return rows
     }
 
     private fun homeRecommendRows(): List<View> {
@@ -403,6 +424,26 @@ class SettingsContentFactory(
                 Toast.makeText(context, "已复制到剪贴板", Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("确定", null)
+            .show()
+    }
+
+    private fun showCustomDownloadConcurrencyDialog() {
+        val picker = NumberPicker(context).apply {
+            minValue = 1
+            maxValue = 12
+            wrapSelectorWheel = false
+            value = ModuleSettings.getCustomDownloadConcurrency(prefs)
+        }
+        AlertDialog.Builder(context)
+            .setTitle("自定义同时缓存数")
+            .setView(picker)
+            .setNegativeButton("取消", null)
+            .setPositiveButton("确定") { _, _ ->
+                prefs.edit()
+                    .putInt(ModuleSettings.KEY_CUSTOM_DOWNLOAD_CONCURRENCY, picker.value)
+                    .apply()
+                openPage(SettingsActivity.PAGE_ROOT)
+            }
             .show()
     }
 
