@@ -1,119 +1,156 @@
 # BBZQ
+> 使用 `libxposed API 102`、由 Kotlin 全量编写的哔哩哔哩增强 Xposed 模组
 
-BBZQ 是一个基于 `libxposed API 102` 的 Bilibili 模块，当前主线以 `api102` 入口、宿主内设置页和轻量 roaming hooks 为核心，重点放在可维护的模块启动流程与少量稳定功能。
+![Kotlin](https://img.shields.io/badge/Kotlin-2.4.0-7F52FF?logo=kotlin&logoColor=white)
+![API](https://img.shields.io/badge/libxposed-API%20102-orange)
+![License](https://img.shields.io/badge/license-Mulan%20PubL%20v2-blue)
 
-## 当前状态
+---
 
-- 模块入口已经切换到 `META-INF/xposed/java_init.list`
-- 运行时主入口为 `io.github.bbzq.BbzqModule`
-- 作用域使用静态声明
-- 当前设置入口不再使用对话框，而是打开完整的 `SettingsActivity`
-- 项目识别统一为 `BBZQ / bbzq`
+## 简介
+BBZQ 是一款适配 libxposed API 102 的哔哩哔哩功能增强模组，采用 Kotlin 完整实现实作，旨在去除不必要内容、优化核心体验，同时提供各类实功能。
+模组通过 `META-INF/xposed/java_init.list` 完成入口注册，核心逻辑入口为 `io.github.bbzq.BbzqModule`；配套设置页面内嵌于哔哩哔哩宿主应用内，方便快捷开关各项功能、调整个性化参数，整体架构便于后续迭代维护与功能扩展。
+
+---
 
 ## 支持的目标包
 
-```text
-tv.danmaku.bili
-com.bilibili.app.in
-tv.danmaku.bilibilihd
-com.bilibili.app.blue
-```
+| 包名 | 说明 |
+|------|------|
+| `tv.danmaku.bili` | 哔哩哔哩 |
+| `com.bilibili.app.in` | BiliBili 旧版 |
+| `tv.danmaku.bilibilihd` | HD版 |
+| `com.bilibili.app.blue` | 概念版 |
 
-## 当前已接入功能
+---
 
-当前 `api102` 主线实际挂载的 hooks 以 [RoamingRuntime.kt](/E:/GitHubRepo/BiliVIPhz/app/src/main/java/io/github/bbzq/roaming/RoamingRuntime.kt:1) 为准：
+## 功能
 
-- 设置入口注入
-  在 Bilibili 设置页注入“高级设置”，点击后打开模块自己的设置页面
-- 净化分享
-  将 `b23.tv` / `bili2233.cn` 短链还原为普通链接，并尽量保留 `p`、`t` 等定位参数
-- 普通链接分享
-  关闭小程序式分享时，尽量将分享结果转成更普通的链接形式
-- 跳过视频激励广告
-  针对 `RewardAdActivity` 做轻量处理
-- 净化竖屏视频广告
-  按标签过滤广告、购物、短剧、电视剧、纪录片、娱乐、电影、音乐、话题等内容
+### 分享与链接
 
-## 当前设置页
+- **净化分享** — 将 `b23.tv` / `bili2233.cn` 短链还原为普通链接，并保留 `p`、`t` 等定位参数
+- **普通链接分享** — 关闭小程序式分享（QQ / 微信），复制分享链接时尽量转换为 av 号形式
 
-当前设置页为宿主内页面式 UI，风格保持 BBZQ 现有卡片布局，不使用设置对话框。页面目前分为三组：
+### 复制增强
 
-- 分享与链接
-  `净化分享`
-  `普通链接分享`
-- 播放净化
-  `跳过视频激励广告`
-- 竖屏视频净化
-  `净化竖屏视频广告`
-  标签筛选
-  拦截统计
+- **去除长按复制** — 禁用应用内各场景里长按后直接复制到剪贴板的行为，减少误触
+- **长按自由复制** — 需先开启「去除长按复制」；拦截到复制动作时弹出可自由选择文本的窗口
 
-对应实现位于 [SettingsContentFactory.kt](/E:/GitHubRepo/BiliVIPhz/app/src/main/java/io/github/bbzq/SettingsContentFactory.kt:1)。
+### 启动净化
+
+- **跳过开屏广告** — 清理启动时的开屏广告响应，减少进入目标应用时的等待（默认开启）
+
+### 首页推荐净化
+
+- **移除首页推荐广告** — 过滤推荐流中的大横幅、信息流广告及广告推广视频
+- **移除首页推荐图文** — 过滤推荐流中的图文动态卡片
+- **阻止首页推荐自动刷新** — 阻止冷启动、长时间后台或从其他页面返回时自动刷新推荐流，保留手动刷新
+
+### 界面定制
+
+- **自定义底栏** — 隐藏底部导航栏中不需要的入口；首次使用需重启 B 站并打开首页加载底栏数据，之后勾选保留项即可
+
+### 播放净化
+
+- **屏蔽视频下方横幅广告** — 阻止视频详情页播放器下方横幅广告创建
+- **跳过视频激励广告** — 自动尝试完成视频激励页（RewardAdActivity）
+
+### 空降助手
+
+基于 [BilibiliSponsorBlock](https://github.com/hanydd/BilibiliSponsorBlock) 社区数据库，在视频播放时按片段时间轴自动跳过选定分类的内容。功能默认关闭，入口默认隐藏
+
+支持的跳过分类：
+
+| 分类 | 说明 |
+|------|------|
+| 赞助商广告 | 视频中的植入、口播和商业推广 |
+| 自我推广 | UP 主引流、关注提醒、推广其他内容 |
+| 片头 | 与正文关系不大的固定开场 |
+| 片尾 | 结束卡、鸣谢和结尾引导 |
+| 互动提醒 | 点赞、投币、评论等互动号召 |
+| 预览 / 回顾 | 下集预告、前情提要和重复回顾 |
+| 填充内容 | 与主线关系较弱的灌水片段 |
+| 离题音乐 | 与内容无关的纯音乐或演奏片段 |
+
+片段数据按视频 BV 号的 SHA-256 前缀向 `bsbsb.top` API 查询，结果缓存 5 分钟，仅匹配当前分 P 的 cid。
+
+### 竖屏视频净化
+
+- **净化竖屏视频广告** — 按标签过滤竖屏视频流中的广告、购物和推广内容，并统计累计拦截条数
+
+可选过滤标签：广告、短剧、购物、电视剧、纪录片、娱乐、电影、音乐、话题
+
+---
 
 ## 使用方式
 
-1. 安装模块 APK。
-2. 在支持 `libxposed API 102` 的框架中启用模块。
-3. 给目标 Bilibili 应用授予作用域。
-4. 重启目标应用。
-5. 打开 Bilibili 设置页，进入模块注入的“高级设置”。
+1. 安装模组 APK
+2. 在支持 `libxposed API 102` 的框架（如 LSPosed）中启用模组
+3. 将哔哩哔哩加入作用域
+4. 重启目标应用
+5. 我的 → 设置 → 高级设置
+6. 启用你需要的功能
 
-桌面图标对应的是模块自己的介绍页，不是单独的调试工具。
+> 桌面图标是模组自身介绍页，不是独立的调试工具。  
+> 空降助手入口隐藏于「关于」分组，双击版本号后显示。
+
+---
 
 ## 构建
 
-环境要求：
+**环境要求**
 
-- JDK `21`
-- Android Gradle Plugin `8.13.1`
-- Kotlin `2.3.21`
-- Gradle Wrapper `8.14.4`
+| 项目 | 版本 |
+|------|------|
+| JDK | 21 |
+| Android Gradle Plugin | 8.13.1 |
+| Kotlin | 2.4.0 |
+| Gradle Wrapper | 8.14.4 |
 
-Debug 构建：
+**Debug 构建**
 
-```powershell
-.\gradlew.bat assembleDebug
+```bash
+./gradlew assembleDebug
+# 输出：app/build/outputs/apk/debug/app-debug.apk
 ```
 
-输出：
+**Release 构建**
 
-```text
-app/build/outputs/apk/debug/app-debug.apk
+```bash
+./gradlew assembleRelease
+# 输出：app/build/outputs/apk/release/app-release.apk
+#       app/build/outputs/apk/release/bbzq_v<releaseName>-<commitCount>.apk
 ```
 
-Release 构建：
-
-```powershell
-.\gradlew.bat assembleRelease
-```
-
-若已配置签名参数，构建后会生成：
-
-```text
-app/build/outputs/apk/release/app-release.apk
-app/build/outputs/apk/release/bbzq_v<releaseName>-<commitCount>.apk
-```
+Release 构建需提前配置签名参数。
 
 ## 项目结构
+```
+app/src/main/java/io/github/bbzq/
+├── BbzqModule.kt                  # libxposed API 102 模组入口
+├── ModuleSettings.kt              # 所有配置键与默认值
+├── ModuleSettingsBridge.kt        # 模组与宿主进程之间的设置桥接
+├── ModuleSettingsProvider.kt      # ContentProvider 跨进程读取设置
+├── SettingsActivity.kt            # 模组设置页 Activity
+├── SettingsContentFactory.kt      # 设置页内容构建
+├── RuntimeEnvironmentInfo.kt      # 运行时环境信息
+└── roaming/
+    ├── RoamingRuntime.kt          # Hook 调度与进程分发
+    ├── BilibiliSponsorBlock.kt    # 空降助手 API 客户端与缓存
+    ├── Reflect.kt                 # 反射与 DexKit 辅助
+    ├── Api102Hook.kt              # API 102 Hook 基类
+    └── hook/                      # 各功能独立 Hook 实现
+```
 
-- [app/src/main/java/io/github/bbzq/BbzqModule.kt](/E:/GitHubRepo/BiliVIPhz/app/src/main/java/io/github/bbzq/BbzqModule.kt:1)
-  `libxposed API 102` 模块入口
-- [app/src/main/java/io/github/bbzq/roaming/](/E:/GitHubRepo/BiliVIPhz/app/src/main/java/io/github/bbzq/roaming)
-  `api102` 反射与 hook helper、runtime、核心 roaming hooks
-- [app/src/main/java/io/github/bbzq/SettingsActivity.kt](/E:/GitHubRepo/BiliVIPhz/app/src/main/java/io/github/bbzq/SettingsActivity.kt:1)
-  模块设置页 Activity
-- [app/src/main/java/io/github/bbzq/ModuleSettingsProvider.kt](/E:/GitHubRepo/BiliVIPhz/app/src/main/java/io/github/bbzq/ModuleSettingsProvider.kt:1)
-  模块与宿主进程之间的设置桥接入口
+### 已知限制
 
-## 已知限制
+- 设置入口依赖宿主设置页结构，大版本更新后可能不会及时适配
+- 自定义底栏需重启 B 站并打开首页后才能读取到底栏项目数据
+- 暂不计划支持地区解锁功能
 
-- README 只描述当前已经接上 `api102` 主线的功能，不代表旧 `hooks/` 目录里的所有历史能力都仍在实际挂载。
-- 直播画质、番剧解析等更重的 roaming 功能目前没有完整迁回 `api102` 主线。
-- 设置入口依赖宿主设置页结构，Bilibili 更新后可能需要重新适配。
-- 目前仍保留 `io.github.bbzq` 这一包名作为模块识别，不再使用旧的 `bzzq` 拼写。
+---
 
-## 授权
+## 许可证
 
-本项目使用木兰公共许可证第 2 版（Mulan PubL v2）。
-
-完整授权见 [LICENSE](/E:/GitHubRepo/BiliVIPhz/LICENSE)。
+本项目使用木兰公共许可证，第 2 版（Mulan PubL v2）。 
+完整授权见 [LICENSE](https://license.coscl.org.cn/MulanPubL-2.0)。
