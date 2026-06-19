@@ -20,6 +20,10 @@ object ModuleSettings {
     const val KEY_PURIFY_HOME_RECOMMEND_AD_ENABLED = "purify_home_recommend_ad_enabled"
     const val KEY_PURIFY_HOME_RECOMMEND_PICTURE_ENABLED = "purify_home_recommend_picture_enabled"
     const val KEY_BLOCK_HOME_RECOMMEND_AUTO_REFRESH_ENABLED = "block_home_recommend_auto_refresh_enabled"
+    const val KEY_HIDE_ALL_HOME_COMPONENTS_ENABLED = "hide_all_home_components_enabled"
+    const val KEY_CUSTOM_HOME_COMPONENT_HIDE_ENABLED = "custom_home_component_hide_enabled"
+    const val KEY_HIDDEN_HOME_COMPONENTS = "hidden_home_components"
+    const val KEY_KNOWN_HOME_COMPONENTS = "known_home_components"
     const val KEY_PURIFY_STORY_VIDEO_AD_ENABLED = "purify_story_video_ad_enabled"
     const val KEY_PURIFY_STORY_VIDEO_AD_TAGS = "purify_story_video_ad_tags"
     const val KEY_PURIFY_STORY_VIDEO_AD_BLOCKED_COUNT = "purify_story_video_ad_blocked_count"
@@ -127,6 +131,18 @@ object ModuleSettings {
 
     fun isBlockHomeRecommendAutoRefreshEnabled(prefs: SharedPreferences): Boolean =
         prefs.getBoolean(KEY_BLOCK_HOME_RECOMMEND_AUTO_REFRESH_ENABLED, false)
+
+    fun isHideAllHomeComponentsEnabled(prefs: SharedPreferences): Boolean =
+        prefs.getBoolean(KEY_HIDE_ALL_HOME_COMPONENTS_ENABLED, false)
+
+    fun isCustomHomeComponentHideEnabled(prefs: SharedPreferences): Boolean =
+        prefs.getBoolean(KEY_CUSTOM_HOME_COMPONENT_HIDE_ENABLED, false)
+
+    fun getHiddenHomeComponents(prefs: SharedPreferences): Set<String> =
+        prefs.getStringSet(KEY_HIDDEN_HOME_COMPONENTS, emptySet()) ?: emptySet()
+
+    fun getKnownHomeComponents(prefs: SharedPreferences): Set<String> =
+        prefs.getStringSet(KEY_KNOWN_HOME_COMPONENTS, emptySet()) ?: emptySet()
 
     fun isPurifyStoryVideoAdEnabled(prefs: SharedPreferences): Boolean =
         prefs.getBoolean(KEY_PURIFY_STORY_VIDEO_AD_ENABLED, false)

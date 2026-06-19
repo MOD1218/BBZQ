@@ -29,6 +29,7 @@ class SettingsContentFactory(
 ) {
     private val tagCheckBoxes = mutableMapOf<String, CheckBox>()
     private val bottomBarItemCheckBoxes = mutableMapOf<String, CheckBox>()
+    private val homeComponentCheckBoxes = mutableMapOf<String, CheckBox>()
     private val sponsorBlockCategoryCheckBoxes = mutableMapOf<String, CheckBox>()
     private lateinit var disableLongPressCopySwitch: Switch
     private lateinit var enhanceLongPressCopySwitch: Switch
@@ -36,6 +37,8 @@ class SettingsContentFactory(
     private lateinit var downloadConcurrencyRow: View
     private lateinit var downloadConcurrencySummary: TextView
     private lateinit var bottomBarSwitch: Switch
+    private lateinit var hideAllHomeComponentsSwitch: Switch
+    private lateinit var customHomeComponentHideSwitch: Switch
     private lateinit var storyVideoAdSwitch: Switch
     private lateinit var blockedCountView: TextView
     private var lastVersionTapAt = 0L
@@ -187,26 +190,53 @@ class SettingsContentFactory(
     }
 
     private fun homeRecommendRows(): List<View> {
-        return listOf(
-            createSwitchRow(
-                "移除首页推荐广告",
-                "过滤首页推荐流中的大横幅、信息流广告和广告推广视频。",
-                ModuleSettings.KEY_PURIFY_HOME_RECOMMEND_AD_ENABLED,
-                false,
-            ),
-            createSwitchRow(
-                "移除首页推荐图文",
-                "过滤首页推荐流中的图文动态卡片。",
-                ModuleSettings.KEY_PURIFY_HOME_RECOMMEND_PICTURE_ENABLED,
-                false,
-            ),
-            createSwitchRow(
-                "阻止首页推荐自动刷新",
-                "阻止冷启动、长时间后台回到前台或从其他页面返回时自动刷新推荐流，保留手动刷新。",
-                ModuleSettings.KEY_BLOCK_HOME_RECOMMEND_AUTO_REFRESH_ENABLED,
-                false,
-            ),
+        val rows = mutableListOf<View>()
+        rows += createSwitchRow(
+            "移除首页推荐广告",
+            "过滤首页推荐流中的大横幅、信息流广告和广告推广视频。",
+            ModuleSettings.KEY_PURIFY_HOME_RECOMMEND_AD_ENABLED,
+            false,
         )
+        rows += createSwitchRow(
+            "移除首页推荐图文",
+            "过滤首页推荐流中的图文动态卡片。",
+            ModuleSettings.KEY_PURIFY_HOME_RECOMMEND_PICTURE_ENABLED,
+            false,
+        )
+        rows += createSwitchRow(
+            "阻止首页推荐自动刷新",
+            "阻止冷启动、长时间后台回到前台或从其他页面返回时自动刷新推荐流，保留手动刷新。",
+            ModuleSettings.KEY_BLOCK_HOME_RECOMMEND_AUTO_REFRESH_ENABLED,
+            false,
+        )
+        rows += createSwitchRow(
+            "隐藏整个首页内容",
+            "只要是首页容器下的子页面，就把其中信息流 RecyclerView 隐藏，适合把 B 站当搜索工具使用。",
+            ModuleSettings.KEY_HIDE_ALL_HOME_COMPONENTS_ENABLED,
+            false,
+        ) {
+            hideAllHomeComponentsSwitch = it
+        }
+        rows += createSwitchRow(
+            "按组件自定义隐藏",
+            "像自定义底栏一样，根据实际检测到的首页组件勾选保留；取消勾选后会被隐藏。",
+            ModuleSettings.KEY_CUSTOM_HOME_COMPONENT_HIDE_ENABLED,
+            false,
+        ) {
+            customHomeComponentHideSwitch = it
+        }
+
+        val components = homeComponentItems()
+        if (components.isEmpty()) {
+            rows += createInfoRow(
+                "首页组件",
+                "尚未读取到首页组件数据。请先打开 B 站首页并切换几个子标签，再回到 BBZQ 设置中选择需要隐藏的组件。",
+            )
+        } else {
+            rows += createInfoRow("首页组件", "勾选代表保留；取消勾选后，当前组件在首页会被隐藏。")
+            rows += createHomeComponentGroup(components)
+        }
+        return rows
     }
 
     private fun bottomBarRows(): List<View> {
@@ -599,6 +629,25 @@ class SettingsContentFactory(
         }
     }
 
+    private fun createHomeComponentGroup(items: List<HomeComponentItem>): View {
+        return LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            items.forEach { item ->
+                addView(CheckBox(context).apply {
+                    text = "${item.name}\n${item.className}"
+                    textSize = 14f
+                    setTextColor(TITLE_COLOR)
+                    setPadding(dp(6), dp(2), dp(6), dp(2))
+                    setOnCheckedChangeListener { _, _ ->
+                        if (!refreshing) saveHiddenHomeComponents()
+                    }
+                    homeComponentCheckBoxes[item.className] = this
+                })
+            }
+        }
+    }
+
     private fun createSwitchRow(
         title: String,
         summary: String,
@@ -614,7 +663,9 @@ class SettingsContentFactory(
                     if (key == ModuleSettings.KEY_PURIFY_STORY_VIDEO_AD_ENABLED ||
                         key == ModuleSettings.KEY_DISABLE_LONG_PRESS_COPY_ENABLED ||
                         key == ModuleSettings.KEY_CUSTOM_BOTTOM_BAR_ENABLED ||
-                        key == ModuleSettings.KEY_SKIP_VIDEO_AD_ENABLED
+                        key == ModuleSettings.KEY_SKIP_VIDEO_AD_ENABLED ||
+                        key == ModuleSettings.KEY_HIDE_ALL_HOME_COMPONENTS_ENABLED ||
+                        key == ModuleSettings.KEY_CUSTOM_HOME_COMPONENT_HIDE_ENABLED
                     ) {
                         refresh()
                     }
@@ -659,6 +710,9 @@ class SettingsContentFactory(
         val copyEnhanceEnabled = copyBaseEnabled && ModuleSettings.isEnhanceLongPressCopyEnabled(prefs)
         val bottomBarEnabled = ModuleSettings.isCustomBottomBarEnabled(prefs)
         val hiddenBottomBarItems = ModuleSettings.getHiddenBottomBarItems(prefs)
+        val hideAllHomeComponentsEnabled = ModuleSettings.isHideAllHomeComponentsEnabled(prefs)
+        val customHomeComponentHideEnabled = ModuleSettings.isCustomHomeComponentHideEnabled(prefs)
+        val hiddenHomeComponents = ModuleSettings.getHiddenHomeComponents(prefs)
         val sponsorBlockEnabled = ModuleSettings.isSkipVideoAdEnabled(prefs)
         val sponsorBlockCategories = ModuleSettings.getSkipVideoAdCategories(prefs)
 
@@ -695,6 +749,18 @@ class SettingsContentFactory(
             checkBox.isEnabled = bottomBarEnabled
             checkBox.isChecked = id !in hiddenBottomBarItems
         }
+        if (::hideAllHomeComponentsSwitch.isInitialized) {
+            hideAllHomeComponentsSwitch.isChecked = hideAllHomeComponentsEnabled
+        }
+        if (::customHomeComponentHideSwitch.isInitialized) {
+            customHomeComponentHideSwitch.isChecked = customHomeComponentHideEnabled
+            customHomeComponentHideSwitch.isEnabled = !hideAllHomeComponentsEnabled
+        }
+        val homeComponentPickerEnabled = customHomeComponentHideEnabled && !hideAllHomeComponentsEnabled
+        homeComponentCheckBoxes.forEach { (className, checkBox) ->
+            checkBox.isEnabled = homeComponentPickerEnabled
+            checkBox.isChecked = className !in hiddenHomeComponents
+        }
 
         if (::storyVideoAdSwitch.isInitialized) {
             storyVideoAdSwitch.isChecked = storyEnabled
@@ -727,6 +793,12 @@ class SettingsContentFactory(
             .apply()
     }
 
+    private fun saveHiddenHomeComponents() {
+        prefs.edit()
+            .putStringSet(ModuleSettings.KEY_HIDDEN_HOME_COMPONENTS, hiddenHomeComponentClassNames().toMutableSet())
+            .apply()
+    }
+
     private fun saveSkipVideoAdCategories() {
         prefs.edit()
             .putStringSet(ModuleSettings.KEY_SKIP_VIDEO_AD_CATEGORIES, selectedSkipVideoAdCategories().toMutableSet())
@@ -738,6 +810,9 @@ class SettingsContentFactory(
 
     private fun hiddenBottomBarItemIds(): Set<String> =
         bottomBarItemCheckBoxes.filterValues { !it.isChecked }.keys.toSet()
+
+    private fun hiddenHomeComponentClassNames(): Set<String> =
+        homeComponentCheckBoxes.filterValues { !it.isChecked }.keys.toSet()
 
     private fun selectedSkipVideoAdCategories(): Set<String> =
         sponsorBlockCategoryCheckBoxes.filterValues { it.isChecked }.keys.toSet()
@@ -773,6 +848,12 @@ class SettingsContentFactory(
             .distinctBy(BottomBarItem::id)
             .sortedBy(BottomBarItem::order)
 
+    private fun homeComponentItems(): List<HomeComponentItem> =
+        ModuleSettings.getKnownHomeComponents(prefs)
+            .mapNotNull(::parseHomeComponentItem)
+            .distinctBy(HomeComponentItem::className)
+            .sortedWith(compareBy<HomeComponentItem> { it.order }.thenBy { it.name }.thenBy { it.className })
+
     private fun parseBottomBarItem(raw: String): BottomBarItem? {
         val parts = raw.split('\t', limit = 4)
         if (parts.size == 4) {
@@ -783,6 +864,13 @@ class SettingsContentFactory(
             return BottomBarItem(Int.MAX_VALUE, parts[0], parts[1], parts[2])
         }
         return null
+    }
+
+    private fun parseHomeComponentItem(raw: String): HomeComponentItem? {
+        val parts = raw.split('\t', limit = 3)
+        if (parts.size != 3) return null
+        val order = parts[0].toIntOrNull() ?: return null
+        return HomeComponentItem(order, parts[1], parts[2])
     }
 
     private fun openUrl(url: String) {
@@ -802,6 +890,12 @@ class SettingsContentFactory(
         val id: String,
         val name: String,
         val uri: String,
+    )
+
+    private data class HomeComponentItem(
+        val order: Int,
+        val name: String,
+        val className: String,
     )
 
     private companion object {
