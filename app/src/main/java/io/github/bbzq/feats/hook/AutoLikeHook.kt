@@ -49,7 +49,7 @@ class AutoLikeHook(env: RoamingEnv) : BaseRoamingHook(env) {
 
         if (
             desc.contains("like") ||
-            desc.contains("璧?) ||
+            desc.contains("赞") ||
             tag.contains("like") ||
             tag.contains("digg") ||
             view.javaClass.name.contains("ImageView")

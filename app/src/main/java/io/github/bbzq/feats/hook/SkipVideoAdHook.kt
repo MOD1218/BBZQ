@@ -401,8 +401,8 @@ class SkipVideoAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
             .map(::categoryLabel)
             .distinct()
         if (labels.isEmpty()) return ""
-        val preview = labels.take(3).joinToString("銆?)
-        return if (labels.size > 3) "锛?preview 绛夛級" else "锛?preview锛?
+        val preview = labels.take(3).joinToString("、")
+        return if (labels.size > 3) "（$preview 等）" else "（$preview）"
     }
 
     private fun skipToastMessage(segment: BilibiliSponsorBlock.Segment): String =

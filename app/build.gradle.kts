@@ -1,7 +1,7 @@
 ﻿import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 plugins {
     alias(libs.plugins.androidApplication)
-    alias(libs.plugins.kotlin.android)
+    id("org.jetbrains.kotlin.android")
     id("org.lsposed.lsplugin.jgit") version "1.1" 
     id("org.lsposed.lsplugin.resopt") version "1.6" 
     id("org.lsposed.lsplugin.apksign") version "1.4"
