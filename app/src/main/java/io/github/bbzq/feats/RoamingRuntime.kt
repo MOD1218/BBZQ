@@ -14,6 +14,7 @@ import io.github.bbzq.feats.hook.FreeCopyHook
 import io.github.bbzq.feats.hook.HomeRecommendAdHook
 import io.github.bbzq.feats.hook.HomeRecommendAutoRefreshHook
 import io.github.bbzq.feats.hook.HomeComponentHideHook
+import io.github.bbzq.feats.hook.HomeTopBarPurifyHook
 import io.github.bbzq.feats.hook.RewardAdHook
 import io.github.bbzq.feats.hook.SettingHook
 import io.github.bbzq.feats.hook.ShareHook
@@ -72,6 +73,7 @@ object RoamingRuntime {
                 ::ShareHook,
                 ::FreeCopyHook,
                 ::BottomBarHook,
+                ::HomeTopBarPurifyHook,
                 ::HomeRecommendAdHook,
                 ::HomeRecommendAutoRefreshHook,
                 ::HomeComponentHideHook,

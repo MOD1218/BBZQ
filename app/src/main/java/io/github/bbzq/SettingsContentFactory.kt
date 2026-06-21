@@ -305,6 +305,18 @@ class SettingsContentFactory(
             )
             rows += createBottomBarItemGroup(items)
         }
+        rows += createSwitchRow(
+            context.getString(R.string.home_top_bar_promotion_title),
+            context.getString(R.string.home_top_bar_promotion_summary),
+            ModuleSettings.KEY_HIDE_HOME_TOP_BAR_PROMOTION_ENABLED,
+            false,
+        )
+        rows += createSwitchRow(
+            context.getString(R.string.home_search_default_word_title),
+            context.getString(R.string.home_search_default_word_summary),
+            ModuleSettings.KEY_HIDE_HOME_SEARCH_DEFAULT_WORD_ENABLED,
+            false,
+        )
         return rows
     }
 

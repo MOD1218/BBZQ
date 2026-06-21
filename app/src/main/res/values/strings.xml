@@ -147,6 +147,10 @@
     <string name="bottom_bar_item_title">底栏项目</string>
     <string name="bottom_bar_unavailable_summary">尚未读取到底栏数据。开启后重启 B 站并打开首页，再回到 BBZQ 设置中选择需要隐藏的项目。</string>
     <string name="bottom_bar_info_summary">勾选代表保留在底栏；取消勾选后会被隐藏。</string>
+    <string name="home_top_bar_promotion_title">移除首页游戏图标</string>
+    <string name="home_top_bar_promotion_summary">隐藏首页顶部游戏入口。</string>
+    <string name="home_search_default_word_title">移除首页推荐搜索词</string>
+    <string name="home_search_default_word_summary">清空首页搜索框内的推荐搜索词。</string>
 
     <!-- 播放 -->
     <string name="playback_hide_banner_title">屏蔽视频页广告</string>
