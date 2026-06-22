@@ -12,6 +12,8 @@ import java.lang.reflect.Method
 import java.util.Collections
 import java.util.IdentityHashMap
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.Unit
+import kotlin.coroutines.Continuation
 
 class VideoCommentHook(env: RoamingEnv) : BaseRoamingHook(env) {
     override fun startHook() {
@@ -52,7 +54,15 @@ class VideoCommentHook(env: RoamingEnv) : BaseRoamingHook(env) {
     }
 
     private fun hookQuickReply(): Int {
-        val viewModelClass = COMMENT_VIEW_MODEL_CLASSES.firstNotNullOfOrNull { it.from(classLoader) } ?: return 0
+        var count = 0
+        COMMENT_VIEW_MODEL_CLASSES.firstNotNullOfOrNull { it.from(classLoader) }?.let { viewModelClass ->
+            count += hookQuickReplyByViewModel(viewModelClass)
+        }
+        count += hookQuickReplyDialogFlow()
+        return count
+    }
+
+    private fun hookQuickReplyByViewModel(viewModelClass: Class<*>): Int {
         val candidates = viewModelClass.declaredMethods
             .asSequence()
             .filter { method ->
@@ -74,6 +84,34 @@ class VideoCommentHook(env: RoamingEnv) : BaseRoamingHook(env) {
                     param.result = null
                 }.onFailure {
                     log("VideoComment quick reply hook failed at ${method.declaringClass.name}.${method.name}", it)
+                }
+            }
+        }
+        return candidates.size
+    }
+
+    private fun hookQuickReplyDialogFlow(): Int {
+        val collectorClass = QUICK_REPLY_DIALOG_COLLECTOR_CLASSES.firstNotNullOfOrNull { it.from(classLoader) } ?: return 0
+        val candidates = collectorClass.declaredMethods
+            .asSequence()
+            .filter { method ->
+                method.parameterCount == 2 &&
+                    !method.name.contains("lambda", ignoreCase = true) &&
+                    method.parameterTypes.firstOrNull()?.isQuickReplyDialogIntentType() == true &&
+                    method.parameterTypes.getOrNull(1)?.let { Continuation::class.java.isAssignableFrom(it) } == true
+            }
+            .distinctBy(Method::toGenericString)
+            .toList()
+
+        candidates.forEach { method ->
+            env.hookBefore(method) { param ->
+                runCatching {
+                    if (!ModuleSettings.isCommentNoQuickReplyEnabled(prefs)) return@runCatching
+                    val intent = param.args.firstOrNull() ?: return@runCatching
+                    if (!intent.shouldBlockQuickReplyDialog()) return@runCatching
+                    param.result = Unit
+                }.onFailure {
+                    log("VideoComment quick reply dialog hook failed at ${method.declaringClass.name}.${method.name}", it)
                 }
             }
         }
@@ -336,6 +374,34 @@ class VideoCommentHook(env: RoamingEnv) : BaseRoamingHook(env) {
             className.contains("PublishDialogIntent", ignoreCase = true)
     }
 
+    private fun Any.shouldBlockQuickReplyDialog(): Boolean {
+        if (!isQuickReplyDialogIntentType()) return false
+
+        val isReply = runCatching { getObjectField("f184778b") as? Boolean }.getOrNull() ?: false
+        if (!isReply) return false
+
+        val posName = runCatching { getObjectField("f184787k")?.toString().orEmpty() }.getOrDefault("")
+        if (posName.isBlank()) return true
+
+        return when {
+            posName.contains("REPLY_BUTTON", ignoreCase = true) -> false
+            posName.contains("BAR", ignoreCase = true) -> false
+            posName.contains("MORE_MENU", ignoreCase = true) -> false
+            posName.contains("INPUT", ignoreCase = true) -> false
+            posName.contains("CARD", ignoreCase = true) -> true
+            posName.contains("ITEM", ignoreCase = true) -> true
+            posName.contains("TEXT", ignoreCase = true) -> true
+            posName.contains("REPLY", ignoreCase = true) -> true
+            else -> true
+        }
+    }
+
+    private fun Any.isQuickReplyDialogIntentType(): Boolean {
+        val className = javaClass.name
+        return className.endsWith("PublishDialogIntent", ignoreCase = true) ||
+            className.contains("PublishDialogIntent", ignoreCase = true)
+    }
+
     private companion object {
         private val THESEUS_TAB_PAGER_SERVICE = arrayOf(
             "com.bilibili.ship.theseus.united.page.tab.TheseusTabPagerService",
@@ -345,6 +411,13 @@ class VideoCommentHook(env: RoamingEnv) : BaseRoamingHook(env) {
         private val COMMENT_VIEW_MODEL_CLASSES = arrayOf(
             "com.bilibili.app.comment3.viewmodel.CommentViewModel",
             "com.bilibili.p4439app.comment3.viewmodel.CommentViewModel",
+        )
+
+        private val QUICK_REPLY_DIALOG_COLLECTOR_CLASSES = arrayOf(
+            "com.bilibili.app.comment3.ui.CommentContainerImpl\$attachRepository\$5",
+            "com.bilibili.p4439app.comment3.p4518ui.CommentContainerImpl\$attachRepository\$5",
+            "com.bilibili.app.comment3.ui.CommentContainerImpl\$attachRepository\$5\$C636262",
+            "com.bilibili.p4439app.comment3.p4518ui.CommentContainerImpl\$attachRepository\$5\$C636262",
         )
 
         private val CMT_VOTE_WIDGET_CLASSES = arrayOf(
