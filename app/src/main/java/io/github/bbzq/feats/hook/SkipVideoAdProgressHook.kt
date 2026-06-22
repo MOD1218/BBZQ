@@ -1,174 +1,463 @@
 package io.github.bbzq.feats.hook
 
 import android.graphics.Canvas
-import android.graphics.Paint
-import android.graphics.RectF
 import android.view.View
 import android.widget.ProgressBar
-import dalvik.system.BaseDexClassLoader
-import dalvik.system.DexFile
 import io.github.bbzq.ModuleSettings
 import io.github.bbzq.SkipVideoAdMode
 import io.github.bbzq.feats.BaseRoamingHook
 import io.github.bbzq.feats.RoamingEnv
+import io.github.bbzq.feats.allFields
+import io.github.bbzq.feats.allMethods
+import io.github.bbzq.feats.callStaticMethod
 import io.github.bbzq.feats.from
-import io.github.bbzq.feats.getObjectField
-import io.github.bbzq.feats.hookAfterMethod
-import java.util.Locale
+import io.github.bbzq.feats.hookAfter
+import java.lang.reflect.Field
+import java.lang.reflect.Method
+import java.util.concurrent.ConcurrentHashMap
 
 class SkipVideoAdProgressHook(env: RoamingEnv) : BaseRoamingHook(env) {
+    private val noArgMethods = ConcurrentHashMap<String, Method>()
+    private val missingNoArgMethods = ConcurrentHashMap.newKeySet<String>()
+    private val storyControllerFields = ConcurrentHashMap<Class<*>, Field>()
+    private val missingStoryControllerFields = ConcurrentHashMap.newKeySet<Class<*>>()
+    private val playerContainerFields = ConcurrentHashMap<Class<*>, Field>()
+    private val missingPlayerContainerFields = ConcurrentHashMap.newKeySet<Class<*>>()
+    private val hookedProgressDrawMethods = ConcurrentHashMap.newKeySet<String>()
+    private val reflectionFailureLogs = ConcurrentHashMap.newKeySet<String>()
+
+    private val panelWidgetKtClass by lazy(LazyThreadSafetyMode.NONE) {
+        PANEL_WIDGET_KT_CLASS.from(classLoader)
+    }
+
     override fun startHook() {
         if (env.processName != env.packageName) return
         ModuleSettings.refreshSkipVideoAdCache(prefs)
         if (!ModuleSettings.isSkipVideoAdEnabledCached(prefs)) return
 
-        var count = 0
-        count += hookSystemSeekBar()
-        count += hookSystemProgressBar()
-        count += hookCustomProgressBars()
+        val count = hookProgressTrackDraw() +
+            hookStorySeekBarLifecycle() +
+            hookInlineProgressUpdates()
         log("startHook: SkipVideoAdProgress, methods=$count")
     }
 
-    private fun hookSystemSeekBar(): Int {
-        val seekBar = "android.widget.AbsSeekBar".from(classLoader) ?: return 0
+    private fun hookProgressTrackDraw(): Int {
+        val type = PROGRESS_BAR_CLASS.from(classLoader) ?: return 0
+        val method = type.findNoArgCanvasMethod("onDraw") ?: return 0
+        if (!hookedProgressDrawMethods.add(method.toGenericString())) return 0
+
         return runCatching {
-            env.hookAfterMethod(seekBar, "onDraw", Canvas::class.java) { param ->
+            env.hookAfter(method) { param ->
                 runCatching {
-                    drawSegments(param.thisObject as? View, param.args.firstOrNull() as? Canvas)
+                    val progressBar = param.thisObject as? ProgressBar ?: return@runCatching
+                    if (!isSupportedProgressView(progressBar)) return@runCatching
+                    drawSegments(progressBar, param.args.firstOrNull() as? Canvas)
                 }.onFailure {
-                    log("SkipVideoAdProgress draw hook failed at AbsSeekBar.onDraw", it)
+                    log("SkipVideoAdProgress draw hook failed at ${method.declaringClass.name}.${method.name}", it)
                 }
             }
-        }.getOrElse {
-            log("SkipVideoAdProgress failed to hook AbsSeekBar.onDraw", it)
-            0
-        }
+        }.fold(
+            onSuccess = { 1 },
+            onFailure = {
+                log("SkipVideoAdProgress failed to hook ${method.declaringClass.name}.${method.name}", it)
+                0
+            },
+        )
     }
 
-    private fun hookSystemProgressBar(): Int {
-        val progressBar = "android.widget.ProgressBar".from(classLoader) ?: return 0
-        return runCatching {
-            env.hookAfterMethod(progressBar, "onDraw", Canvas::class.java) { param ->
-                runCatching {
-                    drawSegments(param.thisObject as? View, param.args.firstOrNull() as? Canvas)
-                }.onFailure {
-                    log("SkipVideoAdProgress draw hook failed at ProgressBar.onDraw", it)
-                }
-            }
-        }.getOrElse {
-            log("SkipVideoAdProgress failed to hook ProgressBar.onDraw", it)
-            0
-        }
-    }
-
-    private fun hookCustomProgressBars(): Int {
+    private fun hookStorySeekBarLifecycle(): Int {
+        val type = STORY_SEEK_BAR_CLASS.from(classLoader) ?: return 0
         var count = 0
-        findCustomProgressClasses().forEach { name ->
-            val type = name.from(classLoader) ?: return@forEach
-            count += hookCanvasMethod(type, "onDraw")
-            count += hookCanvasMethod(type, "dispatchDraw")
-        }
+        type.safeAllMethods("story lifecycle")
+            .filter { method ->
+                method.name == "onStart" &&
+                    method.parameterCount == 1 &&
+                    method.parameterTypes.firstOrNull()?.isNumericType() == true
+            }
+            .distinctBy(Method::toGenericString)
+            .forEach { method ->
+                count += runCatching {
+                    env.hookAfter(method) { param ->
+                        runCatching {
+                            bindStoryView(param.thisObject as? ProgressBar, requestSegments = true)
+                        }.onFailure {
+                            log("SkipVideoAdProgress story bind failed at ${method.name}", it)
+                        }
+                    }
+                    1
+                }.getOrElse {
+                    log("SkipVideoAdProgress failed to hook ${type.name}.${method.name}", it)
+                    0
+                }
+            }
+
         return count
     }
 
-    private fun findCustomProgressClasses(): Set<String> {
-        val classes = linkedSetOf<String>()
-        classes += CUSTOM_PROGRESS_CLASSES
-        dexClassNames()
-            .filter(::mightBeSeekWidgetName)
-            .forEach { classes += it }
-        return classes
-    }
-
-    private fun hookCanvasMethod(type: Class<*>, methodName: String): Int {
-        return runCatching {
-            env.hookAfterMethod(type, methodName, Canvas::class.java) { param ->
-                runCatching {
-                    drawSegments(param.thisObject as? View, param.args.firstOrNull() as? Canvas)
-                }.onFailure {
-                    log("SkipVideoAdProgress draw hook failed at ${type.name}.$methodName", it)
-                }
+    private fun hookInlineProgressUpdates(): Int {
+        var count = 0
+        INLINE_PROGRESS_CLASSES
+            .mapNotNull { it.from(classLoader) }
+            .distinctBy { it.name }
+            .forEach { type ->
+                type.safeAllMethods("inline progress")
+                    .filter { method -> method.name == "updateProgress" && method.parameterCount == 0 }
+                    .distinctBy(Method::toGenericString)
+                    .forEach { method ->
+                        count += runCatching {
+                            env.hookAfter(method) { param ->
+                                runCatching {
+                                    bindInlineProgressView(param.thisObject as? ProgressBar, requestSegments = true)
+                                }.onFailure {
+                                    log("SkipVideoAdProgress inline bind failed at ${type.name}.${method.name}", it)
+                                }
+                            }
+                            1
+                        }.getOrElse {
+                            log("SkipVideoAdProgress failed to hook ${type.name}.${method.name}", it)
+                            0
+                        }
+                    }
             }
-        }.getOrElse { 0 }
+        return count
     }
 
-    private fun drawSegments(view: View?, canvas: Canvas?) {
-        if (view == null || canvas == null) return
+    private fun drawSegments(progressBar: ProgressBar, canvas: Canvas?) {
+        if (canvas == null) return
         val config = ModuleSettings.getSkipVideoAdCache(prefs)
         if (!config.enabled) return
 
-        val segments = SkipVideoAdState.segments
-        val progressBar = view as? ProgressBar
-        val durationMs = SkipVideoAdState.durationMs.takeIf { it > 0L }
-            ?: progressBar?.max?.takeIf { it > 0 }?.toLong()
-            ?: 0L
-        if (segments.isEmpty() || durationMs <= 0L) return
-
-        val width = view.width
-        val height = view.height
-        if (width <= 0 || height <= 0) return
-
-        val rawBounds = progressBar?.progressDrawable?.bounds
-        val saneBounds = rawBounds?.takeIf { b ->
-            b.left >= 0 && b.right > b.left && b.right <= width &&
-                    b.top >= 0 && b.bottom > b.top && b.bottom <= height &&
-                    (b.bottom - b.top) < height
+        val state = resolveMarkerState(progressBar) ?: return
+        val durationMs = state.durationMs.takeIf { it > 0L }
+            ?: progressBar.max.takeIf { it > 0 }?.toLong()
+            ?: return
+        val segments = state.segments.filter { segment ->
+            (config.modes[segment.category] ?: SkipVideoAdMode.IGNORE) != SkipVideoAdMode.IGNORE
         }
+        if (segments.isEmpty()) return
 
-        val leftBound = saneBounds?.left?.toFloat()?.takeIf { it < width } ?: view.paddingLeft.toFloat()
-        val rightBound = saneBounds?.right?.toFloat()?.takeIf { it > leftBound }
-            ?: (width - view.paddingRight).toFloat()
-        val availableWidth = rightBound - leftBound
-        if (availableWidth <= 0f) return
+        SkipVideoAdMarkerRenderer.draw(
+            progressBar = progressBar,
+            canvas = canvas,
+            durationMs = durationMs,
+            segments = segments,
+            colorForCategory = ::colorFor,
+        )
+    }
 
-        val density = view.resources.displayMetrics.density
-
-        val drawableTop = saneBounds?.top?.toFloat()
-        val drawableBottom = saneBounds?.bottom?.toFloat()
-
-        val top: Float
-        val bottom: Float
-
-        if (drawableTop != null && drawableBottom != null && drawableBottom > drawableTop) {
-            val trackHeight = drawableBottom - drawableTop
-            val markerHeight = trackHeight.coerceAtMost(3f * density)
-            val centerY = (drawableTop + drawableBottom) / 2f
-            top = centerY - (markerHeight / 2f)
-            bottom = centerY + (markerHeight / 2f)
-        } else {
-            val fallbackMarkerHeight = 3f * density
-            val fallbackBottom = (height - view.paddingBottom).toFloat().coerceAtLeast(fallbackMarkerHeight)
-            top = (fallbackBottom - fallbackMarkerHeight).coerceAtLeast(0f)
-            bottom = fallbackBottom
-        }
-
-        val radius = (bottom - top) / 2f
-
-        segments.forEach { segment ->
-            if ((config.modes[segment.category] ?: SkipVideoAdMode.IGNORE) == SkipVideoAdMode.IGNORE) {
-                return@forEach
-            }
-            val startX = leftBound + ((segment.segment[0] * 1000f) / durationMs) * availableWidth
-            val endX = leftBound + ((segment.segment[1] * 1000f) / durationMs) * availableWidth
-            var safeStart = startX.coerceIn(leftBound, rightBound)
-            val rawEnd = endX.coerceIn(leftBound, rightBound)
-            if (rightBound - safeStart < MIN_MARKER_WIDTH_PX) {
-                safeStart = (rightBound - MIN_MARKER_WIDTH_PX).coerceAtLeast(leftBound)
-            }
-            val safeEnd = if (rightBound - safeStart <= MIN_MARKER_WIDTH_PX) {
-                rightBound
-            } else {
-                rawEnd.coerceIn(safeStart + MIN_MARKER_WIDTH_PX, rightBound)
-            }
-            if (safeEnd <= safeStart) return@forEach
-            sharedRect.set(safeStart, top, safeEnd, bottom)
-
-            fillPaint.color = colorFor(segment.category)
-            strokePaint.color = fillPaint.color
-            canvas.drawRoundRect(sharedRect, radius, radius, fillPaint)
-            canvas.drawRoundRect(sharedRect, radius, radius, strokePaint)
+    private fun resolveMarkerState(progressBar: ProgressBar): SkipVideoAdState.TimelineMarkerState? {
+        return when {
+            isStorySeekBar(progressBar) -> bindStoryView(progressBar, requestSegments = true)
+            isInlineProgressView(progressBar) -> bindInlineProgressView(progressBar, requestSegments = false)
+            isPlayerSeekView(progressBar) -> bindPlayerSeekView(progressBar, requestSegments = true)
+            else -> stateForViewOrActive(progressBar)
         }
     }
+
+    private fun bindPlayerSeekView(
+        progressBar: ProgressBar?,
+        requestSegments: Boolean,
+    ): SkipVideoAdState.TimelineMarkerState? {
+        if (progressBar == null) return null
+        val controller = progressBar.callNoArg("getPlayerCoreService")
+        val identity = resolveIdentityFromPlayerSeekView(progressBar)
+        val key = identity?.let(SkipVideoAdState::activateVideo)
+            ?: SkipVideoAdState.keyForController(controller)
+            ?: return stateForViewOrActive(progressBar)
+
+        SkipVideoAdState.bindView(progressBar, key)
+        SkipVideoAdState.bindController(controller, key)
+        if (controller != null) {
+            updateDurationFromController(key, controller)
+        } else {
+            SkipVideoAdState.updateDuration(key, progressBar.max.toLong())
+        }
+        if (requestSegments && identity != null) {
+            requestSegmentsIfMissing(identity)
+        }
+        return stateForViewOrActive(progressBar)
+    }
+
+    private fun bindInlineProgressView(
+        progressBar: ProgressBar?,
+        requestSegments: Boolean,
+    ): SkipVideoAdState.TimelineMarkerState? {
+        if (progressBar == null) return null
+        val controller = resolveInlinePlayerContext(progressBar) ?: return stateForViewOrActive(progressBar)
+        val identity = resolveIdentityFromPlayableParams(controller.callNoArg("getCurrentPlayableParams"))
+        val key = identity?.let(SkipVideoAdState::activateVideo)
+            ?: SkipVideoAdState.keyForController(controller)
+            ?: return stateForViewOrActive(progressBar)
+
+        SkipVideoAdState.bindController(controller, key)
+        SkipVideoAdState.bindView(progressBar, key)
+        updateDurationFromController(key, controller)
+        if (requestSegments && identity != null) {
+            requestSegmentsIfMissing(identity)
+        }
+        return stateForViewOrActive(progressBar)
+    }
+
+    private fun bindStoryView(
+        progressBar: ProgressBar?,
+        requestSegments: Boolean,
+    ): SkipVideoAdState.TimelineMarkerState? {
+        if (progressBar == null) return null
+        val controller = resolveStoryController(progressBar) ?: return stateForViewOrActive(progressBar)
+        val player = controller.callNoArg("getPlayer")
+        val detail = controller.callNoArg("getData")
+        val identity = resolveIdentityFromStoryPlayer(player)
+            ?: detail?.let(::resolveIdentityFromDetail)
+            ?: return stateForViewOrActive(progressBar)
+        val key = SkipVideoAdState.activateVideo(identity)
+
+        SkipVideoAdState.bindController(controller, key)
+        if (player != null) {
+            SkipVideoAdState.bindController(player, key)
+        }
+        SkipVideoAdState.bindView(progressBar, key)
+
+        val durationMs = resolveStoryDurationMs(player, progressBar, detail, key)
+        SkipVideoAdState.updateDuration(key, durationMs)
+        if (requestSegments) {
+            requestSegmentsIfMissing(identity)
+        }
+        return stateForViewOrActive(progressBar)
+    }
+
+    private fun stateForViewOrActive(progressBar: ProgressBar): SkipVideoAdState.TimelineMarkerState? {
+        SkipVideoAdState.stateForView(progressBar)?.let { return it }
+        val durationMs = progressBar.max.takeIf { it > 0 }?.toLong() ?: 0L
+        val state = SkipVideoAdState.activeStateForDuration(durationMs) ?: return null
+        SkipVideoAdState.bindView(progressBar, state.key)
+        return state
+    }
+
+    private fun requestSegmentsIfMissing(identity: SkipVideoAdState.VideoIdentity) {
+        val config = ModuleSettings.getSkipVideoAdCache(prefs)
+        if (!config.enabled) return
+        SkipVideoAdState.requestSegmentsIfMissing(identity, config.enabledCategories) { message, throwable ->
+            log(message, throwable)
+        }
+    }
+
+    private fun updateDurationFromController(key: String, controller: Any) {
+        val duration = controller.callNoArg("getDuration").asLong()
+            ?: controller.callNoArg("getRealDuration").asLong()
+            ?: return
+        SkipVideoAdState.updateDuration(key, duration)
+    }
+
+    private fun resolveStoryDurationMs(
+        player: Any?,
+        progressBar: ProgressBar,
+        detail: Any?,
+        key: String,
+    ): Long {
+        player?.callNoArg("getDuration").asLong()?.takeIf { it > 0L }?.let { return it }
+        player?.callNoArg("getRealDuration").asLong()?.takeIf { it > 0L }?.let { return it }
+        progressBar.max.takeIf { it > 0 }?.toLong()?.let { return it }
+
+        val detailDuration = detail?.callNoArg("getDuration").asLong()?.takeIf { it > 0L } ?: return 0L
+        val existingDuration = SkipVideoAdState.stateForKey(key)?.durationMs ?: 0L
+        val detailDurationMs = detailDuration * STORY_DETAIL_DURATION_SCALE
+        if (existingDuration <= 0L) return detailDurationMs
+
+        return if (kotlin.math.abs(existingDuration - detailDurationMs) <
+            kotlin.math.abs(existingDuration - detailDuration)
+        ) {
+            detailDurationMs
+        } else {
+            detailDuration
+        }
+    }
+
+    private fun resolveInlinePlayerContext(progressBar: ProgressBar): Any? =
+        panelWidgetKtClass?.callStaticMethod("getPlayerContext", progressBar)
+
+    private fun resolveIdentityFromStoryPlayer(player: Any?): SkipVideoAdState.VideoIdentity? =
+        resolveIdentityFromPlayableParams(player?.callNoArg("getCurrentPlayableParam"))
+            ?: resolveIdentityFromPlayableParams(player?.callNoArg("getCurrentPlayableParams"))
+
+    private fun resolveIdentityFromPlayerSeekView(progressBar: ProgressBar): SkipVideoAdState.VideoIdentity? {
+        val container = resolvePlayerContainer(progressBar) ?: return null
+        currentDirectors(container).forEach { director ->
+            resolveIdentityFromPlayableParams(director.callNoArg("getCurrentPlayableParams"))?.let { return it }
+        }
+        return null
+    }
+
+    private fun currentDirectors(container: Any): List<Any> {
+        val v1Director = container.callNoArg("getVideoPlayDirectorService")
+        val v3Director = container.callNoArg("getPlayDirectorServiceV3")
+        val directorVersion = container.callNoArg("getPlayerParams")
+            ?.callNoArg("getConfig")
+            ?.callNoArg("getDirectorVersion")
+            ?.toString()
+
+        val preferred = when (directorVersion) {
+            "V1" -> listOf(v1Director, v3Director)
+            "V3" -> listOf(v3Director, v1Director)
+            else -> listOf(v3Director, v1Director)
+        }
+        return preferred.filterNotNull().distinctBy { System.identityHashCode(it) }
+    }
+
+    private fun resolvePlayerContainer(view: View): Any? {
+        val type = view.javaClass
+        playerContainerFields[type]?.let { field ->
+            return runCatching { field.get(view) }.getOrNull()
+        }
+        if (type in missingPlayerContainerFields) return null
+
+        val field = type.safeAllFields("player container").firstOrNull { candidate ->
+            runCatching {
+                candidate.type.name == PLAYER_CONTAINER_CLASS ||
+                    (
+                        candidate.type.hasNoArgMethod("getPlayDirectorServiceV3") &&
+                            candidate.type.hasNoArgMethod("getVideoPlayDirectorService")
+                        )
+            }.getOrDefault(false)
+        }
+        if (field == null) {
+            missingPlayerContainerFields.add(type)
+            return null
+        }
+
+        playerContainerFields[type] = field
+        return runCatching { field.get(view) }.getOrNull()
+    }
+
+    private fun resolveStoryController(view: View): Any? {
+        val type = view.javaClass
+        storyControllerFields[type]?.let { field ->
+            return runCatching { field.get(view) }.getOrNull()
+        }
+        if (type in missingStoryControllerFields) return null
+
+        val field = type.safeAllFields("story controller").firstOrNull { candidate ->
+            runCatching {
+                candidate.type.hasNoArgMethod("getData") &&
+                    candidate.type.hasNoArgMethod("getPlayer")
+            }.getOrDefault(false)
+        }
+        if (field == null) {
+            missingStoryControllerFields.add(type)
+            return null
+        }
+
+        storyControllerFields[type] = field
+        return runCatching { field.get(view) }.getOrNull()
+    }
+
+    private fun resolveIdentityFromDetail(detail: Any): SkipVideoAdState.VideoIdentity? =
+        SkipVideoAdState.resolveVideoIdentity(
+            bvid = detail.callNoArg("getBvid") as? String,
+            cid = detail.callNoArg("getCid"),
+            aid = detail.callNoArg("getAid"),
+        )
+
+    private fun resolveIdentityFromPlayableParams(params: Any?): SkipVideoAdState.VideoIdentity? {
+        if (params == null) return null
+        val directIdentity = SkipVideoAdState.resolveVideoIdentity(
+            bvid = params.callNoArg("getBvid") as? String,
+            cid = params.callNoArg("getCid"),
+            aid = params.callNoArg("getAvid") ?: params.callNoArg("getAid"),
+        )
+        if (directIdentity != null) return directIdentity
+
+        val displayParams = params.callNoArg("getDisplayParams")
+        val displayIdentity = SkipVideoAdState.resolveVideoIdentity(
+            bvid = displayParams?.callNoArg("getBvid") as? String,
+            cid = displayParams?.callNoArg("getCid"),
+            aid = displayParams?.callNoArg("getAvid") ?: displayParams?.callNoArg("getAid"),
+        )
+        if (displayIdentity != null) return displayIdentity
+
+        val danmakuParams = params.callNoArg("getDanmakuResolveParams")
+        return SkipVideoAdState.resolveVideoIdentity(
+            bvid = danmakuParams?.callNoArg("getBvid") as? String,
+            cid = danmakuParams?.callNoArg("getCid"),
+            aid = danmakuParams?.callNoArg("getAvid") ?: danmakuParams?.callNoArg("getAid"),
+        )
+    }
+
+    private fun Any.callNoArg(name: String): Any? {
+        val type = javaClass
+        val cacheKey = type.name + "#" + name
+        noArgMethods[cacheKey]?.let { method ->
+            return runCatching { method.invoke(this) }.getOrNull()
+        }
+        if (cacheKey in missingNoArgMethods) return null
+
+        val method = type.findNoArgMethod(name)
+        if (method == null) {
+            missingNoArgMethods.add(cacheKey)
+            return null
+        }
+        noArgMethods[cacheKey] = method
+        return runCatching { method.invoke(this) }.getOrNull()
+    }
+
+    private fun Class<*>.hasNoArgMethod(name: String): Boolean =
+        findNoArgMethod(name) != null
+
+    private fun Class<*>.findNoArgMethod(name: String): Method? =
+        safeAllMethods("method $name").firstOrNull { method ->
+            method.name == name && method.parameterCount == 0
+        } ?: runCatching {
+            methods.firstOrNull { method ->
+                method.name == name && method.parameterCount == 0
+            }?.apply { isAccessible = true }
+        }.getOrNull()
+
+    private fun Class<*>.findNoArgCanvasMethod(name: String): Method? =
+        safeAllMethods("canvas method $name").firstOrNull { method ->
+            method.name == name &&
+                method.parameterCount == 1 &&
+                method.parameterTypes.firstOrNull() == Canvas::class.java
+        }
+
+    private fun Class<*>.safeAllMethods(reason: String): List<Method> =
+        runCatching { allMethods().toList() }
+            .getOrElse {
+                logReflectionFailure(reason, name, it)
+                emptyList()
+            }
+
+    private fun Class<*>.safeAllFields(reason: String): List<Field> =
+        runCatching { allFields().toList() }
+            .getOrElse {
+                logReflectionFailure(reason, name, it)
+                emptyList()
+            }
+
+    private fun logReflectionFailure(reason: String, typeName: String, throwable: Throwable) {
+        if (reflectionFailureLogs.add("$reason#$typeName")) {
+            log("SkipVideoAdProgress failed to inspect $typeName for $reason", throwable)
+        }
+    }
+
+    private fun isPlayerSeekView(view: ProgressBar): Boolean {
+        val name = view.javaClass.name
+        return name == PLAYER_SEEK_WIDGET_CLASS ||
+            (name.endsWith(".PlayerSeekWidget3") && "playerbizcommon" in name)
+    }
+
+    private fun isInlineProgressView(view: ProgressBar): Boolean {
+        val name = view.javaClass.name
+        return name in INLINE_PROGRESS_CLASSES ||
+            (name.endsWith(".InlineProgressWidgetV3") && ".inline." in name)
+    }
+
+    private fun isStorySeekBar(view: ProgressBar): Boolean {
+        val name = view.javaClass.name
+        return name == STORY_SEEK_BAR_CLASS ||
+            (name.endsWith(".StorySeekBar") && ".video.story." in name)
+    }
+
+    private fun isSupportedProgressView(view: ProgressBar): Boolean =
+        isPlayerSeekView(view) || isStorySeekBar(view) || isInlineProgressView(view)
 
     private fun colorFor(category: String): Int =
         ModuleSettings.skipVideoAdCategories
@@ -176,60 +465,30 @@ class SkipVideoAdProgressHook(env: RoamingEnv) : BaseRoamingHook(env) {
             ?.color
             ?: 0xFFFB7299.toInt()
 
-    private fun dexClassNames(): Sequence<String> = sequence {
-        val baseDexClassLoader = classLoader as? BaseDexClassLoader ?: return@sequence
-        val pathList = baseDexClassLoader.getObjectField("pathList") ?: return@sequence
-        val dexElements = pathList.getObjectField("dexElements") as? Array<*> ?: return@sequence
-        dexElements.forEach { element ->
-            val dexFile = element?.getObjectField("dexFile") as? DexFile ?: return@forEach
-            val entries = dexFile.entries()
-            while (entries.hasMoreElements()) {
-                yield(entries.nextElement())
-            }
-        }
-    }
+    private fun Class<*>.isNumericType(): Boolean =
+        this == Int::class.javaPrimitiveType ||
+            this == Int::class.javaObjectType ||
+            this == Long::class.javaPrimitiveType ||
+            this == Long::class.javaObjectType
 
-    private fun mightBeSeekWidgetName(name: String): Boolean {
-        val lowerName = name.lowercase(Locale.US)
-        if ("seek" !in lowerName && "progress" !in lowerName) return false
-        return ("player" in lowerName || "inline" in lowerName || "projection" in lowerName) &&
-            !name.contains('$')
+    private fun Any?.asLong(): Long? = when (this) {
+        is Number -> toLong()
+        is String -> toLongOrNull()
+        else -> null
     }
 
     private companion object {
-        private const val MIN_MARKER_WIDTH_PX = 3f
-        private val sharedRect = RectF()
+        private const val PROGRESS_BAR_CLASS = "android.widget.ProgressBar"
+        private const val PANEL_WIDGET_KT_CLASS = "com.bilibili.inline.panel.PanelWidgetKt"
+        private const val PLAYER_CONTAINER_CLASS = "tv.danmaku.biliplayerv2.PlayerContainer"
+        private const val PLAYER_SEEK_WIDGET_CLASS = "com.bilibili.playerbizcommonv2.widget.seek.v3.PlayerSeekWidget3"
+        private const val STORY_SEEK_BAR_CLASS = "com.bilibili.video.story.view.StorySeekBar"
+        private const val STORY_DETAIL_DURATION_SCALE = 1000L
 
-        private val fillPaint = Paint().apply {
-            isAntiAlias = true
-            alpha = 190
-            style = Paint.Style.FILL
-        }
-
-        private val strokePaint = Paint().apply {
-            isAntiAlias = true
-            alpha = 130
-            style = Paint.Style.STROKE
-            strokeWidth = 1f
-        }
-
-        private val CUSTOM_PROGRESS_CLASSES = arrayOf(
+        private val INLINE_PROGRESS_CLASSES = setOf(
+            "com.bilibili.app.comm.list.common.inline.widgetV3.InlineProgressWidgetV3",
             "com.bilibili.p4439app.p4450comm.p4472list.common.inline.widgetV3.InlineProgressWidgetV3",
             "com.bilibili.p4440app.p4451comm.p4473list.common.inline.widgetV3.InlineProgressWidgetV3",
-            "com.bilibili.playerbizcommonv2.widget.seek.v3.PlayerSeekWidget3",
-            "com.bilibili.playerbizcommonv2.widget.seek.PlayerSeekWidget",
-            "com.bilibili.playerbizcommonv2.widget.seek.v2.PlayerSeekWidget2",
-            "com.bilibili.playerbizcommonv2.widget.p5771seek.p5772v3.HeatPeakView",
-            "tv.danmaku.bili.ui.video.player.view.VideoSeekBar",
-            "tv.danmaku.bili.player.view.PlayerSeekBar",
-            "tv.danmaku.bili.player.widget.VideoProgressBar",
-            "tv.danmaku.bili.player.widget.PlayerSeekBar",
-            "com.bilibili.p4439app.p4450comm.p4472list.common.inline.widgetV3.InlineGestureSeekWidgetV3",
-            "com.bilibili.p4439app.p4450comm.p4472list.common.inline.p4478view.InlineGestureSeekBar",
-            "com.bilibili.p4440app.p4451comm.p4473list.common.inline.p4479view.InlineGestureSeekBar",
-            "com.bilibili.p5336lib.projection.internal.widget.halfscreen.ProjectionHalScreenSeekWidget",
-            "com.bilibili.p5336lib.projection.internal.widget.fullscreen.ProjectionFullScreenSeekWidget",
-            "com.bilibili.p5336lib.projection.internal.widget.fullscreen.newui.ProjectionSeekBarWidget",
         )
     }
 }
