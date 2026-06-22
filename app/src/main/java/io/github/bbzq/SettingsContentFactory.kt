@@ -423,23 +423,17 @@ class SettingsContentFactory(
                 ModuleSettings.KEY_COMMENT_NO_OPERATION,
                 false,
             ),
+            createSwitchRow(
+                context.getString(R.string.comment_picture_view_title),
+                context.getString(R.string.comment_picture_view_summary),
+                ModuleSettings.KEY_COMMENT_PICTURE_VIEW,
+                false,
+            ),
         )
     }
 
     private fun mineProfileRows(): List<View> {
         return listOf(
-            createSwitchRow(
-                context.getString(R.string.mine_add_search_title),
-                context.getString(R.string.mine_add_search_summary),
-                ModuleSettings.KEY_MINE_ADD_SEARCH,
-                false,
-            ),
-            createSwitchRow(
-                context.getString(R.string.mine_add_messages_title),
-                context.getString(R.string.mine_add_messages_summary),
-                ModuleSettings.KEY_MINE_ADD_MESSAGES,
-                false,
-            ),
             createSwitchRow(
                 context.getString(R.string.mine_remove_vip_title),
                 context.getString(R.string.mine_remove_vip_summary),

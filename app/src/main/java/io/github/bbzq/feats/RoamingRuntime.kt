@@ -24,6 +24,7 @@ import io.github.bbzq.feats.hook.SkipVideoAdProgressHook
 import io.github.bbzq.feats.hook.SplashAdHook
 import io.github.bbzq.feats.hook.StoryPlayerAdHook
 import io.github.bbzq.feats.hook.VideoCommentHook
+import io.github.bbzq.feats.hook.CommentPictureHook
 import io.github.bbzq.feats.hook.VideoDetailBannerAdHook
 import io.github.bbzq.feats.hook.MineProfileHook
 import io.github.libxposed.api.XposedInterface
@@ -89,6 +90,7 @@ object RoamingRuntime {
                 ::AccessKeyHook,
                 ::TeenagersModeHook,
                 ::VideoCommentHook,
+                ::CommentPictureHook,
                 ::MineProfileHook,
             )
             ProcessScope.UNSUPPORTED -> emptyList()
