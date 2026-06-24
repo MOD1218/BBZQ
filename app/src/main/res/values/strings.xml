@@ -130,6 +130,11 @@
     <string name="home_recommend_picture_summary">过滤首页推荐流中的图文动态卡片。</string>
     <string name="home_recommend_game_promo_title">移除首页推荐游戏推广</string>
     <string name="home_recommend_game_promo_summary">过滤首页推荐流中的游戏推广卡片，包括“点我玩玩”这类卡片。</string>
+    <string name="home_recommend_title_keyword_title">标题关键词屏蔽</string>
+    <string name="home_recommend_title_keyword_empty_summary">未配置关键词。填写后，标题包含关键词的首页推荐会被过滤。</string>
+    <string name="home_recommend_title_keyword_enabled_summary">已配置 %1$d 个关键词：%2$s</string>
+    <string name="home_recommend_title_keyword_dialog_title">标题关键词屏蔽</string>
+    <string name="home_recommend_title_keyword_hint">使用换行、逗号或分号分隔</string>
     <string name="home_recommend_vertical_av_detail_title">默认以详情页打开竖屏视频</string>
     <string name="home_recommend_vertical_av_detail_summary">首页推荐中的竖屏视频点开后默认进入详情页。</string>
     <string name="home_recommend_auto_refresh_title">阻止首页推荐自动刷新</string>
@@ -211,6 +216,9 @@
     <string name="skip_mode_dialog_title">%1$s - 跳过</string>
     <string name="skip_mode_cancel">取消</string>
     <string name="skip_mode_confirm">确定</string>
+    <string name="dialog_cancel">取消</string>
+    <string name="dialog_save">保存</string>
+    <string name="list_separator">、</string>
     <string name="free_copy_title">自由复制</string>
     <string name="free_copy_original_button">复制原始内容</string>
 

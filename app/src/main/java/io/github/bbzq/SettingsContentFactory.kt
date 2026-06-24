@@ -9,12 +9,14 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.SystemClock
+import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.CompoundButton
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.NumberPicker
 import android.widget.ScrollView
@@ -45,6 +47,7 @@ class SettingsContentFactory(
     private lateinit var downloadConcurrencySummary: TextView
     private lateinit var bottomBarSwitch: Switch
     private lateinit var homeRecommendItemSwitch: Switch
+    private lateinit var homeRecommendTitleKeywordSummaryView: TextView
     private lateinit var hideAllHomeComponentsSwitch: Switch
     private lateinit var customHomeComponentHideSwitch: Switch
     private lateinit var storyVideoAdSwitch: Switch
@@ -236,6 +239,7 @@ class SettingsContentFactory(
             ModuleSettings.KEY_PURIFY_HOME_RECOMMEND_GAME_PROMO_ENABLED,
             false,
         )
+        rows += createHomeRecommendTitleKeywordRow()
         rows += createSwitchRow(
             context.getString(R.string.home_recommend_vertical_av_detail_title),
             context.getString(R.string.home_recommend_vertical_av_detail_summary),
@@ -842,6 +846,57 @@ class SettingsContentFactory(
         }
     }
 
+    private fun createHomeRecommendTitleKeywordRow(): View {
+        homeRecommendTitleKeywordSummaryView = TextView(context).apply {
+            textSize = 12f
+            setTextColor(SUMMARY_COLOR)
+            setPadding(0, dp(4), 0, 0)
+        }
+        return LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { showHomeRecommendTitleKeywordDialog() }
+            addView(TextView(context).apply {
+                text = context.getString(R.string.home_recommend_title_keyword_title)
+                textSize = 15f
+                setTextColor(TITLE_COLOR)
+            })
+            addView(homeRecommendTitleKeywordSummaryView)
+        }
+    }
+
+    private fun showHomeRecommendTitleKeywordDialog() {
+        val input = EditText(context).apply {
+            setText(ModuleSettings.getHomeRecommendTitleKeywordsText(prefs))
+            minLines = 4
+            maxLines = 8
+            inputType = InputType.TYPE_CLASS_TEXT or
+                InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            setSingleLine(false)
+            setSelectAllOnFocus(false)
+            setHint(R.string.home_recommend_title_keyword_hint)
+        }
+        val content = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(10), dp(20), 0)
+            addView(input)
+        }
+        AlertDialog.Builder(context)
+            .setTitle(R.string.home_recommend_title_keyword_dialog_title)
+            .setView(content)
+            .setNegativeButton(R.string.dialog_cancel, null)
+            .setPositiveButton(R.string.dialog_save) { _, _ ->
+                prefs.edit()
+                    .putString(ModuleSettings.KEY_HOME_RECOMMEND_TITLE_KEYWORDS, input.text?.toString()?.trim().orEmpty())
+                    .apply()
+                refresh()
+            }
+            .show()
+    }
+
     private fun createBlockedCountRow(): View {
         blockedCountView = TextView(context).apply {
             textSize = 12f
@@ -1179,6 +1234,9 @@ class SettingsContentFactory(
         if (::homeRecommendItemSwitch.isInitialized) {
             homeRecommendItemSwitch.isChecked = homeRecommendFilterEnabled
         }
+        if (::homeRecommendTitleKeywordSummaryView.isInitialized) {
+            homeRecommendTitleKeywordSummaryView.text = homeRecommendTitleKeywordSummary()
+        }
         homeRecommendItemCheckBoxes.forEach { (key, checkBox) ->
             checkBox.isEnabled = homeRecommendFilterEnabled
             checkBox.isChecked = key !in hiddenHomeRecommendItems
@@ -1266,6 +1324,20 @@ class SettingsContentFactory(
 
     private fun hiddenHomeComponentClassNames(): Set<String> =
         homeComponentCheckBoxes.filterValues { !it.isChecked }.keys.toSet()
+
+    private fun homeRecommendTitleKeywordSummary(): String {
+        val keywords = ModuleSettings.parseHomeRecommendTitleKeywords(
+            ModuleSettings.getHomeRecommendTitleKeywordsText(prefs),
+        )
+        if (keywords.isEmpty()) {
+            return context.getString(R.string.home_recommend_title_keyword_empty_summary)
+        }
+        return context.getString(
+            R.string.home_recommend_title_keyword_enabled_summary,
+            keywords.size,
+            keywords.take(TITLE_KEYWORD_SUMMARY_MAX_ITEMS).joinToString(context.getString(R.string.list_separator)),
+        )
+    }
 
     private fun showRuntimeEnvironmentDialog() {
         val content = TextView(context).apply {
@@ -1375,5 +1447,6 @@ class SettingsContentFactory(
         private val DISABLE_CONFIRM_COLOR = Color.parseColor("#F6B000")
         private val CANCEL_ACTION_COLOR = Color.parseColor("#00A1D6")
         private const val VERSION_TAP_WINDOW_MS = 1500L
+        private const val TITLE_KEYWORD_SUMMARY_MAX_ITEMS = 4
     }
 }

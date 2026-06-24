@@ -15,12 +15,25 @@ import io.github.bbzq.feats.symbol.RestoredHomeRecommendFeedSymbols
 import java.lang.reflect.Field
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
+import java.util.LinkedHashMap
 
 class HomeRecommendAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
     private var fieldWriteFailedLogged = false
     private var itemDebugFailedLogged = false
+    private var titleKeywordsRaw = ""
+    private var titleKeywordsCache = emptyList<String>()
     private val methodCache = mutableMapOf<Class<*>, MutableMap<String, Method?>>()
     private val serializedStringFieldCache = mutableMapOf<Class<*>, MutableMap<String, Field?>>()
+    private val recentRecommendFeedDebugLogs =
+        object : LinkedHashMap<String, Long>(DEBUG_FEED_LOG_CACHE_SIZE, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Long>?): Boolean =
+                size > DEBUG_FEED_LOG_CACHE_SIZE
+        }
+    private val recentRecommendItemDebugLogs =
+        object : LinkedHashMap<String, Long>(DEBUG_ITEM_LOG_CACHE_SIZE, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Long>?): Boolean =
+                size > DEBUG_ITEM_LOG_CACHE_SIZE
+        }
 
     override fun startHook() {
         if (env.processName != env.packageName) return
@@ -83,13 +96,29 @@ class HomeRecommendAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
             removeAds = ModuleSettings.isPurifyHomeRecommendAdEnabled(prefs),
             removePictures = ModuleSettings.isPurifyHomeRecommendPictureEnabled(prefs),
             removeGamePromos = ModuleSettings.isPurifyHomeRecommendGamePromoEnabled(prefs),
+            titleKeywords = currentTitleKeywords(),
             openVerticalAvInDetail = ModuleSettings.isHomeRecommendVerticalAvDetailEnabled(prefs),
         )
 
+    private fun currentTitleKeywords(): List<String> {
+        val raw = ModuleSettings.getHomeRecommendTitleKeywordsText(prefs)
+        if (raw != titleKeywordsRaw) {
+            titleKeywordsRaw = raw
+            titleKeywordsCache = ModuleSettings.parseHomeRecommendTitleKeywords(raw)
+        }
+        return titleKeywordsCache
+    }
+
     private fun logRecommendItems(items: List<*>, symbols: FilterSymbols) {
         if (!isDebugModule()) return
-        log("HomeRecommendFeed items=${items.size}")
-        items.forEachIndexed { index, item ->
+        if (!shouldLogRecommendItems(items, symbols)) return
+        val itemsToLog = items.mapIndexedNotNull { index, item ->
+            if (shouldLogRecommendItem(item, symbols)) index to item else null
+        }
+        if (itemsToLog.isEmpty()) return
+        val loggedSuffix = if (itemsToLog.size == items.size) "" else " logged=${itemsToLog.size}"
+        log("HomeRecommendFeed items=${items.size}$loggedSuffix")
+        itemsToLog.forEach { (index, item) ->
             runCatching {
                 log(describeRecommendItem(index, item, symbols))
             }.onFailure { throwable ->
@@ -98,6 +127,66 @@ class HomeRecommendAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
                     log("HomeRecommendFeed item debug failed", throwable)
                 }
             }
+        }
+    }
+
+    private fun shouldLogRecommendItem(item: Any?, symbols: FilterSymbols): Boolean {
+        val now = System.currentTimeMillis()
+        val signature = recommendItemSignature(item, symbols)
+        return synchronized(recentRecommendItemDebugLogs) {
+            val lastLoggedAt = recentRecommendItemDebugLogs[signature]
+            if (lastLoggedAt != null && now - lastLoggedAt < DEBUG_ITEM_LOG_DEDUP_WINDOW_MS) {
+                false
+            } else {
+                recentRecommendItemDebugLogs[signature] = now
+                true
+            }
+        }
+    }
+
+    private fun shouldLogRecommendItems(items: List<*>, symbols: FilterSymbols): Boolean {
+        val now = System.currentTimeMillis()
+        val signature = recommendItemsSignature(items, symbols)
+        return synchronized(recentRecommendFeedDebugLogs) {
+            val lastLoggedAt = recentRecommendFeedDebugLogs[signature]
+            if (lastLoggedAt != null && now - lastLoggedAt < DEBUG_FEED_LOG_DEDUP_WINDOW_MS) {
+                false
+            } else {
+                recentRecommendFeedDebugLogs[signature] = now
+                true
+            }
+        }
+    }
+
+    private fun recommendItemsSignature(items: List<*>, symbols: FilterSymbols): String =
+        buildString {
+            append(items.size)
+            items.take(DEBUG_FEED_SIGNATURE_MAX_ITEMS).forEachIndexed { index, item ->
+                append('|')
+                append(index)
+                append(':')
+                append(recommendItemSignature(item, symbols))
+            }
+            if (items.size > DEBUG_FEED_SIGNATURE_MAX_ITEMS) {
+                append("|last:")
+                append(recommendItemSignature(items.lastOrNull(), symbols))
+            }
+        }
+
+    private fun recommendItemSignature(item: Any?, symbols: FilterSymbols): String {
+        if (item == null) return "null"
+        return buildString {
+            append(item.javaClass.name)
+            append('#')
+            append(callNoArg(item, "getHolderItemId"))
+            append('#')
+            append(callNoArg(item, "getIdx"))
+            append('#')
+            append(callNoArg(item, "getParam"))
+            append('#')
+            append(callNoArg(item, "getTrackId"))
+            append('#')
+            append(holderTypeOf(item, symbols.getHolderType))
         }
     }
 
@@ -321,6 +410,9 @@ class HomeRecommendAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
     private fun removeReason(item: Any?, symbols: FilterSymbols, options: FilterOptions): String? {
         if (item == null) return null
         val holderType = holderTypeOf(item, symbols.getHolderType)
+        if (options.titleKeywords.isNotEmpty() && isTitleKeywordBlocked(item, options.titleKeywords)) {
+            return "title_keyword"
+        }
         if (options.removeAds) {
             if (holderType == BANNER_V8) return "banner_v8"
             if (isHomeRecommendAd(item, holderType, symbols)) return "ad"
@@ -329,6 +421,11 @@ class HomeRecommendAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
         if (options.removePictures && isPictureCard(item, symbols)) return "picture"
         if (options.removeGamePromos && isGamePromoCard(item, holderType, symbols)) return "game_promo"
         return null
+    }
+
+    private fun isTitleKeywordBlocked(item: Any, keywords: List<String>): Boolean {
+        val title = callNoArg(item, "getTitle")?.toString()?.takeIf { it.isNotBlank() } ?: return false
+        return keywords.any { keyword -> title.contains(keyword, ignoreCase = true) }
     }
 
     private fun holderTypeOf(item: Any, getHolderType: Method): String? =
@@ -566,10 +663,12 @@ class HomeRecommendAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
         val removeAds: Boolean,
         val removePictures: Boolean,
         val removeGamePromos: Boolean,
+        val titleKeywords: List<String>,
         val openVerticalAvInDetail: Boolean,
     ) {
-        val shouldFilter: Boolean = removeAds || removePictures || removeGamePromos
+        val shouldFilter: Boolean = removeAds || removePictures || removeGamePromos || titleKeywords.isNotEmpty()
         val enabled: Boolean = removeAds || removePictures || removeGamePromos || openVerticalAvInDetail
+            || titleKeywords.isNotEmpty()
     }
 
     private data class FilterResult(
@@ -595,6 +694,11 @@ class HomeRecommendAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
         private const val GSON_SERIALIZED_NAME = "com.google.gson.annotations.SerializedName"
         private const val MAX_VALUE_LENGTH = 300
         private const val MAX_LOG_LINE_LENGTH = 3500
+        private const val DEBUG_FEED_LOG_CACHE_SIZE = 32
+        private const val DEBUG_FEED_LOG_DEDUP_WINDOW_MS = 5_000L
+        private const val DEBUG_FEED_SIGNATURE_MAX_ITEMS = 24
+        private const val DEBUG_ITEM_LOG_CACHE_SIZE = 256
+        private const val DEBUG_ITEM_LOG_DEDUP_WINDOW_MS = 5_000L
         private val PROMO_TEXT_METHOD_HINTS = listOf(
             "label",
             "badge",

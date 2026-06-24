@@ -24,6 +24,7 @@ object ModuleSettings {
     const val KEY_PURIFY_HOME_RECOMMEND_AD_ENABLED = "purify_home_recommend_ad_enabled"
     const val KEY_PURIFY_HOME_RECOMMEND_PICTURE_ENABLED = "purify_home_recommend_picture_enabled"
     const val KEY_PURIFY_HOME_RECOMMEND_GAME_PROMO_ENABLED = "purify_home_recommend_game_promo_enabled"
+    const val KEY_HOME_RECOMMEND_TITLE_KEYWORDS = "home_recommend_title_keywords"
     const val KEY_HOME_RECOMMEND_VERTICAL_AV_DETAIL_ENABLED = "home_recommend_vertical_av_detail_enabled"
     const val KEY_BLOCK_HOME_RECOMMEND_AUTO_REFRESH_ENABLED = "block_home_recommend_auto_refresh_enabled"
     const val KEY_CUSTOM_HOME_RECOMMEND_FILTER_ENABLED = "custom_home_recommend_filter_enabled"
@@ -63,6 +64,7 @@ object ModuleSettings {
     const val KEY_COMMENT_PICTURE_VIEW = "vid_comment_picture_view"
     const val KEY_MINE_REMOVE_VIP = "mine_remove_vip"
     const val KEY_MINE_KEEP_VIP_SPACE = "mine_keep_vip_space"
+    const val MAX_HOME_RECOMMEND_TITLE_KEYWORDS = 64
 
     const val KEY_TARGET_APP_VERSION = "target_app_version"
     const val CACHE_BILI_SETTINGS_ACTIVITY = "cache_settings_activity"
@@ -209,6 +211,18 @@ object ModuleSettings {
 
     fun isPurifyHomeRecommendGamePromoEnabled(prefs: SharedPreferences): Boolean =
         prefs.getBoolean(KEY_PURIFY_HOME_RECOMMEND_GAME_PROMO_ENABLED, false)
+
+    fun getHomeRecommendTitleKeywordsText(prefs: SharedPreferences): String =
+        prefs.getString(KEY_HOME_RECOMMEND_TITLE_KEYWORDS, "").orEmpty()
+
+    fun parseHomeRecommendTitleKeywords(raw: String): List<String> =
+        raw.split('\n', '\r', ',', '，', ';', '；')
+            .asSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+            .take(MAX_HOME_RECOMMEND_TITLE_KEYWORDS)
+            .toList()
 
     fun isHomeRecommendVerticalAvDetailEnabled(prefs: SharedPreferences): Boolean =
         prefs.getBoolean(KEY_HOME_RECOMMEND_VERTICAL_AV_DETAIL_ENABLED, false)
