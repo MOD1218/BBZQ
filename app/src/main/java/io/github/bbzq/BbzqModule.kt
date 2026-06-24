@@ -2,8 +2,10 @@ package io.github.bbzq
 
 import android.app.Application
 import android.content.Context
+import android.os.Bundle
 import android.util.Log
 import io.github.bbzq.feats.RoamingRuntime
+import io.github.bbzq.feats.symbol.BiliSymbolResolver
 import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface.HotReloadedParam
@@ -64,7 +66,14 @@ class BbzqModule : XposedModule() {
     }
 
     override fun onHotReloading(param: HotReloadingParam): Boolean {
-        param.setSavedInstanceState(packageName.takeIf { it.isNotBlank() })
+        val forceSymbolRescan = param.getExtras()
+            ?.getBoolean(SymbolCacheRefreshRequest.EXTRA_FORCE_SYMBOL_RESCAN, false) == true
+        param.setSavedInstanceState(
+            Bundle().apply {
+                putString("packageName", packageName.takeIf { it.isNotBlank() })
+                putBoolean("forceSymbolRescan", forceSymbolRescan)
+            },
+        )
         log(Log.INFO, LOG_TAG, "Hot reloading requested for ${packageName.ifBlank { processName }}")
         return true
     }
@@ -72,8 +81,10 @@ class BbzqModule : XposedModule() {
     override fun onHotReloaded(param: HotReloadedParam) {
         processName = param.getProcessName()
         val application = resolveCurrentApplication()
+        val savedState = param.getSavedInstanceState()
         val resolvedPackageName = application?.packageName
-            ?: (param.getSavedInstanceState() as? String)
+            ?: (savedState as? Bundle)?.getString("packageName")
+            ?: (savedState as? String)
             ?: packageName
 
         if (resolvedPackageName !in TARGET_PACKAGES) {
@@ -99,6 +110,9 @@ class BbzqModule : XposedModule() {
         }
 
         packageName = resolvedPackageName
+        if (param.getExtras()?.getBoolean(SymbolCacheRefreshRequest.EXTRA_FORCE_SYMBOL_RESCAN, false) == true) {
+            forceRefreshSymbolsForHotReload(application, classLoader)
+        }
         startRuntimeOnce(
             packageName = resolvedPackageName,
             processName = processName,
@@ -106,6 +120,33 @@ class BbzqModule : XposedModule() {
             classLoader = classLoader,
         )
         super.onHotReloaded(param)
+    }
+
+    private fun forceRefreshSymbolsForHotReload(
+        application: Context,
+        classLoader: ClassLoader,
+    ) {
+        ModuleSettingsBridge.attach(application, this)
+        val moduleContext = runCatching {
+            application.createPackageContext(MODULE_PACKAGE, Context.CONTEXT_IGNORE_SECURITY)
+        }.onFailure {
+            log(Log.WARN, LOG_TAG, "Hot reload symbol refresh cannot create module context", it)
+        }.getOrNull()
+        runCatching {
+            BiliSymbolResolver.forceRefresh(
+                hostContext = application,
+                moduleContext = moduleContext,
+                classLoader = classLoader,
+            ) { message, throwable ->
+                if (throwable == null) {
+                    log(Log.INFO, LOG_TAG, message)
+                } else {
+                    log(Log.WARN, LOG_TAG, message, throwable)
+                }
+            }
+        }.onFailure {
+            log(Log.WARN, LOG_TAG, "Hot reload symbol refresh failed", it)
+        }
     }
 
     private fun startRuntimeOnce(
@@ -167,6 +208,7 @@ class BbzqModule : XposedModule() {
 
     private companion object {
         private const val LOG_TAG = "BBZQ"
+        private const val MODULE_PACKAGE = "io.github.bbzq"
 
         private val TARGET_PACKAGES = setOf(
             "tv.danmaku.bili",

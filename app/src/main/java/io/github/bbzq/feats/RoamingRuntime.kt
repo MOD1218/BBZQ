@@ -27,11 +27,16 @@ import io.github.bbzq.feats.hook.VideoCommentHook
 import io.github.bbzq.feats.hook.CommentPictureHook
 import io.github.bbzq.feats.hook.VideoDetailBannerAdHook
 import io.github.bbzq.feats.hook.MineProfileHook
+import io.github.bbzq.feats.symbol.BiliHookSymbols
+import io.github.bbzq.feats.symbol.BiliSymbolResolver
 import io.github.libxposed.api.XposedInterface
 
 object RoamingRuntime {
     fun isProcessSupported(packageName: String, processName: String): Boolean =
         resolveProcessScope(packageName, processName) != ProcessScope.UNSUPPORTED
+
+    fun isSymbolResolverProcess(packageName: String, processName: String): Boolean =
+        resolveProcessScope(packageName, processName).let { it == ProcessScope.MAIN || it == ProcessScope.DOWNLOAD }
 
     fun start(
         xposed: XposedInterface,
@@ -58,6 +63,17 @@ object RoamingRuntime {
         }
 
         ModuleSettingsBridge.attach(env.hostContext, xposed)
+        val symbols = if (processScope == ProcessScope.MAIN || processScope == ProcessScope.DOWNLOAD) {
+            BiliSymbolResolver.resolve(
+                hostContext = env.hostContext,
+                moduleContext = env.moduleContext,
+                classLoader = classLoader,
+                log = log,
+            )
+        } else {
+            null
+        }
+        env.symbols = symbols
 
         val hooks = when (processScope) {
             ProcessScope.WEB -> listOf(
@@ -131,6 +147,9 @@ class RoamingEnv(
     val classLoader: ClassLoader,
     private val logger: (String, Throwable?) -> Unit,
 ) {
+    var symbols: BiliHookSymbols? = null
+        internal set
+
     val prefs: SharedPreferences
         get() = ModuleSettingsBridge.instance
 

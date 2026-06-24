@@ -23,6 +23,9 @@ import android.widget.TextView
 import android.widget.Toast
 import io.github.bbzq.DesktopIconHelper
 import io.github.bbzq.R
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class SettingsContentFactory(
     private val context: Context,
@@ -47,6 +50,7 @@ class SettingsContentFactory(
     private lateinit var storyVideoAdSwitch: Switch
     private lateinit var skipVideoAdAutoLikeSwitch: Switch
     private lateinit var blockedCountView: TextView
+    private lateinit var symbolScanStatusSummary: TextView
     private var versionTapCount = 0
     private var firstVersionTapAt = 0L
     private var refreshing = false
@@ -535,6 +539,7 @@ class SettingsContentFactory(
         ) {
             handleVersionRowClick()
         }
+        rows += createSymbolCacheRefreshRow()
         return rows
     }
 
@@ -673,6 +678,82 @@ class SettingsContentFactory(
             .setNegativeButton(R.string.runtime_environment_ok, null)
             .show()
     }
+
+    private fun createSymbolCacheRefreshRow(): View {
+        symbolScanStatusSummary = TextView(context).apply {
+            text = symbolScanSummary()
+            textSize = 12f
+            setTextColor(SUMMARY_COLOR)
+            setPadding(0, dp(4), 0, 0)
+        }
+        return LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { handleSymbolCacheRefreshClick() }
+            addView(TextView(context).apply {
+                text = context.getString(R.string.symbol_cache_refresh_title)
+                textSize = 15f
+                setTextColor(TITLE_COLOR)
+            })
+            addView(symbolScanStatusSummary)
+        }
+    }
+
+    private fun handleSymbolCacheRefreshClick() {
+        val report = symbolScanReport()
+        AlertDialog.Builder(context)
+            .setTitle(R.string.symbol_cache_refresh_dialog_title)
+            .setMessage(context.getString(R.string.symbol_cache_refresh_dialog_message, report))
+            .setNegativeButton(R.string.skip_mode_cancel, null)
+            .setPositiveButton(R.string.symbol_cache_refresh_confirm) { _, _ ->
+                startSymbolCacheRefresh()
+            }
+            .show()
+    }
+
+    private fun startSymbolCacheRefresh() {
+        val progress = AlertDialog.Builder(context)
+            .setTitle(R.string.symbol_cache_refresh_running_title)
+            .setMessage(R.string.symbol_cache_refresh_running_message)
+            .setCancelable(false)
+            .show()
+        ModuleRemotePreferences.requestSymbolCacheRefresh { result ->
+            progress.dismiss()
+            Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+            if (::symbolScanStatusSummary.isInitialized) {
+                symbolScanStatusSummary.text = symbolScanSummary()
+            }
+            if (!result.success && result.targetResults.isNotEmpty()) {
+                AlertDialog.Builder(context)
+                    .setTitle(R.string.symbol_cache_refresh_failed_title)
+                    .setMessage(result.targetResults.joinToString("\n") { "${it.processName}: ${it.detail}" })
+                    .setPositiveButton(R.string.runtime_environment_ok, null)
+                    .show()
+            }
+        }
+    }
+
+    private fun symbolScanSummary(): String {
+        val summary = prefs.getString(ModuleSettings.KEY_SYMBOL_SCAN_STATUS_SUMMARY, null)
+            ?: context.getString(R.string.symbol_cache_refresh_no_status)
+        val updatedAt = prefs.getString(ModuleSettings.KEY_SYMBOL_SCAN_STATUS_UPDATED_AT, null)
+            ?.toLongOrNull()
+            ?.let(::formatTime)
+        return if (updatedAt == null) {
+            summary
+        } else {
+            context.getString(R.string.symbol_cache_refresh_summary_with_time, summary, updatedAt)
+        }
+    }
+
+    private fun symbolScanReport(): String =
+        prefs.getString(ModuleSettings.KEY_SYMBOL_SCAN_STATUS_REPORT, null)
+            ?: context.getString(R.string.symbol_cache_refresh_no_report)
+
+    private fun formatTime(value: Long): String =
+        SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(value))
 
     private fun showCustomDownloadConcurrencyDialog() {
         val picker = NumberPicker(context).apply {
@@ -1120,6 +1201,9 @@ class SettingsContentFactory(
         }
         if (::skipVideoAdAutoLikeSwitch.isInitialized) {
             skipVideoAdAutoLikeSwitch.isChecked = skipVideoAdAutoLikeEnabled
+        }
+        if (::symbolScanStatusSummary.isInitialized) {
+            symbolScanStatusSummary.text = symbolScanSummary()
         }
         tagCheckBoxes.forEach { (key, checkBox) ->
             checkBox.isEnabled = storyEnabled

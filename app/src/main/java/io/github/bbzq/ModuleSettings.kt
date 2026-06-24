@@ -79,6 +79,9 @@ object ModuleSettings {
     const val KEY_RUNTIME_PATCH_MODE = "runtime_patch_mode"
     const val KEY_RUNTIME_PROCESS_NAME = "runtime_process_name"
     const val KEY_RUNTIME_LAST_UPDATE_TIME = "runtime_last_update_time"
+    const val KEY_SYMBOL_SCAN_STATUS_SUMMARY = "symbol_scan_status_summary"
+    const val KEY_SYMBOL_SCAN_STATUS_REPORT = "symbol_scan_status_report"
+    const val KEY_SYMBOL_SCAN_STATUS_UPDATED_AT = "symbol_scan_status_updated_at"
 
     val defaultStoryVideoAdTags = setOf("ad")
     val defaultSkipVideoAdModes = mapOf(

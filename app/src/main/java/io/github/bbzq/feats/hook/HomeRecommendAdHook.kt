@@ -8,11 +8,10 @@ import io.github.bbzq.feats.BaseRoamingHook
 import io.github.bbzq.feats.MethodHookParam
 import io.github.bbzq.feats.RoamingEnv
 import io.github.bbzq.feats.allFields
-import io.github.bbzq.feats.from
 import io.github.bbzq.feats.hookAfter
-import io.github.bbzq.feats.methodsNamed
 import io.github.bbzq.feats.setIntField
 import io.github.bbzq.feats.setObjectField
+import io.github.bbzq.feats.symbol.RestoredHomeRecommendFeedSymbols
 import java.lang.reflect.Field
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
@@ -32,59 +31,20 @@ class HomeRecommendAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
             return
         }
 
-        val holderDataClass = PEGASUS_HOLDER_DATA.from(classLoader)
-        val baseDataClass = BASE_PEGASUS_DATA_CLASSES.firstNotNullOfOrNull { it.from(classLoader) }
-        val responseClasses = PEGASUS_RESPONSE_CLASSES.mapNotNull { it.from(classLoader) }
-        if (responseClasses.isEmpty() || holderDataClass == null) {
-            log("startHook: HomeRecommendAd missing response=$responseClasses holderData=$holderDataClass")
+        val feedSymbols = env.symbols?.homeRecommendFeed?.restore(classLoader)
+        if (feedSymbols == null) {
+            log("startHook: HomeRecommendAd missing Pegasus feed symbols")
             return
         }
 
         var count = 0
-        responseClasses.forEach { responseClass ->
-            val getItems = responseClass.methodsNamed("getItems")
-                .firstOrNull {
-                    it.parameterCount == 0 &&
-                        List::class.java.isAssignableFrom(it.returnType) &&
-                        !Modifier.isStatic(it.modifiers) &&
-                        !Modifier.isAbstract(it.modifiers)
-                }
-                ?: return@forEach
-            val getHolderType = holderDataClass.methodsNamed("getHolderType")
-                .firstOrNull {
-                    it.parameterCount == 0 &&
-                        it.returnType == String::class.java &&
-                        !Modifier.isStatic(it.modifiers)
-                }
-                ?: return@forEach
-
-            val symbols = FilterSymbols(
-                getHolderType = getHolderType,
-                getBizType = holderDataClass.methodsNamed("getBizType")
-                    .firstOrNull { it.parameterCount == 0 && !Modifier.isStatic(it.modifiers) },
-                getHolderStyle = holderDataClass.methodsNamed("getHolderStyle")
-                    .firstOrNull { it.parameterCount == 0 && !Modifier.isStatic(it.modifiers) },
-                isSmallCard = HOLDER_STYLE.from(classLoader)
-                    ?.methodsNamed("isSmallCard")
-                    ?.firstOrNull { it.parameterCount == 0 && it.returnType == Boolean::class.javaPrimitiveType },
-                getAdInfo = baseDataClass?.methodsNamed("getAdInfo")
-                    ?.firstOrNull { it.parameterCount == 0 && !Modifier.isStatic(it.modifiers) },
-                getCardType = baseDataClass?.methodsNamed("getCardType")
-                    ?.firstOrNull { it.parameterCount == 0 && !Modifier.isStatic(it.modifiers) },
-                getCardGoto = baseDataClass?.methodsNamed("getCardGoto")
-                    ?.firstOrNull { it.parameterCount == 0 && !Modifier.isStatic(it.modifiers) },
-                getGoTo = baseDataClass?.methodsNamed("getGoTo")
-                    ?.firstOrNull { it.parameterCount == 0 && !Modifier.isStatic(it.modifiers) },
-                getUri = baseDataClass?.methodsNamed("getUri")
-                    ?.firstOrNull { it.parameterCount == 0 && !Modifier.isStatic(it.modifiers) },
-                adInfoClass = AD_INFO.from(classLoader),
-                itemsField = responseClass.allFields()
-                    .filter { List::class.java.isAssignableFrom(it.type) }
-                    .singleOrNull(),
-            )
-
+        feedSymbols.responseGetItems.forEach { response ->
+            val getItems = response.getItems
+            val symbols = feedSymbols.toFilterSymbols(response.itemsField)
             env.hookAfter(getItems) { param ->
-                (param.result as? List<*>)?.let { logRecommendItems(it, symbols) }
+                (param.result as? List<*>)?.let { items ->
+                    logRecommendItems(items, symbols)
+                }
                 val result = handleReturnList(param, symbols, currentOptions())
                 if (result != null && (result.removed > 0 || isDebugModule())) {
                     val parts = buildList {
@@ -100,8 +60,23 @@ class HomeRecommendAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
             }
             count += 1
         }
-        log("startHook: HomeRecommendAd methods=$count responseClasses=${responseClasses.size}")
+        log("startHook: HomeRecommendAd methods=$count responseClasses=${feedSymbols.responseGetItems.size}")
     }
+
+    private fun RestoredHomeRecommendFeedSymbols.toFilterSymbols(itemsField: Field?): FilterSymbols =
+        FilterSymbols(
+            getHolderType = getHolderType,
+            getBizType = getBizType,
+            getHolderStyle = getHolderStyle,
+            isSmallCard = isSmallCard,
+            getAdInfo = getAdInfo,
+            getCardType = getCardType,
+            getCardGoto = getCardGoto,
+            getGoTo = getGoTo,
+            getUri = getUri,
+            adInfoClass = adInfoClass,
+            itemsField = itemsField,
+        )
 
     private fun currentOptions(): FilterOptions =
         FilterOptions(
@@ -607,18 +582,6 @@ class HomeRecommendAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
     }
 
     private companion object {
-        private val PEGASUS_RESPONSE_CLASSES = arrayOf(
-            "com.bilibili.pegasus.data.base.PegasusResponse",
-            "com.bilibili.pegasus.p5730data.p5731base.PegasusResponse",
-            "com.bilibili.pegasus.p5730data.request.PegasusResponseWrapper",
-        )
-        private const val PEGASUS_HOLDER_DATA = "com.bilibili.pegasus.PegasusHolderData"
-        private val BASE_PEGASUS_DATA_CLASSES = arrayOf(
-            "com.bilibili.pegasus.data.base.BasePegasusData",
-            "com.bilibili.pegasus.p5730data.p5731base.BasePegasusData",
-        )
-        private const val HOLDER_STYLE = "com.bilibili.pegasus.HolderStyle"
-        private const val AD_INFO = "com.bilibili.adcommon.data.IAdInfo"
         private const val BANNER_V8 = "banner_v8"
         private const val BIZ_TYPE_AD = "AD"
         private const val CM_V2 = "cm_v2"

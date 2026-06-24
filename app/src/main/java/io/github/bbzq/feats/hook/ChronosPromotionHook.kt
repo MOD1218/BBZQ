@@ -9,13 +9,12 @@ import io.github.bbzq.feats.allFields
 import io.github.bbzq.feats.allMethods
 import io.github.bbzq.feats.callMethod
 import io.github.bbzq.feats.callStaticMethod
-import io.github.bbzq.feats.from
 import io.github.bbzq.feats.hookAfter
 import io.github.bbzq.feats.hookBefore
 import io.github.bbzq.feats.hookBeforeConstructor
 import io.github.bbzq.feats.isAssignableFromBoxed
-import io.github.bbzq.feats.methodsNamed
 import io.github.bbzq.feats.setObjectField
+import io.github.bbzq.feats.symbol.RestoredChronosPromotionSymbols
 import java.lang.reflect.Array as JavaArray
 import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
@@ -40,16 +39,21 @@ class ChronosPromotionHook(env: RoamingEnv) : BaseRoamingHook(env) {
             log("startHook: ChronosPromotion disabled, provider=${ModuleSettingsBridge.lastProviderStatus}")
             return
         }
+        val symbols = env.symbols?.chronosPromotion?.restore(classLoader)
+        if (symbols == null) {
+            log("startHook: ChronosPromotion skipped because symbols are unavailable")
+            return
+        }
 
-        val installed = installLocalHandlerHooks() +
-            installLocalGetViewProgressHook() +
-            installLocalDmViewHook() +
-            installRemoteHandlerHooks() +
-            installChronosMessageSenderHook() +
-            installAdDanmakuFeedHook() +
-            installInteractLayerViewProgressHook() +
-            installGeminiOperationWidgetHooks() +
-            installPlayerSettingTopShortcutHook()
+        val installed = installLocalHandlerHooks(symbols) +
+            installLocalGetViewProgressHook(symbols) +
+            installLocalDmViewHook(symbols) +
+            installRemoteHandlerHooks(symbols) +
+            installChronosMessageSenderHook(symbols) +
+            installAdDanmakuFeedHook(symbols) +
+            installInteractLayerViewProgressHook(symbols) +
+            installGeminiOperationWidgetHooks(symbols) +
+            installPlayerSettingTopShortcutHook(symbols)
         if (installed == 0) {
             log("startHook: ChronosPromotion no hook point found")
         } else {
@@ -57,22 +61,16 @@ class ChronosPromotionHook(env: RoamingEnv) : BaseRoamingHook(env) {
         }
     }
 
-    private fun installLocalHandlerHooks(): Int {
-        val handlerType = CHRONOS_LOCAL_HANDLER.from(classLoader)
-        if (handlerType == null) {
-            log("startHook: ChronosPromotion local handler missing")
-            return 0
-        }
-
-        val updateDetailStateRequest = UPDATE_VIDEO_DETAIL_STATE_REQUEST.from(classLoader)
-        val openUrlRequest = OPEN_URL_SCHEME_REQUEST.from(classLoader)
-        val adDanmakuEventRequest = AD_DANMAKU_EVENT_REQUEST.from(classLoader)
-        val notifyCommercialEventRequest = NOTIFY_COMMERCIAL_EVENT_REQUEST.from(classLoader)
+    private fun installLocalHandlerHooks(symbols: RestoredChronosPromotionSymbols): Int {
+        val updateDetailStateRequest = symbols.clazz(CHRONOS_ID_UPDATE_DETAIL_STATE_REQUEST)
+        val openUrlRequest = symbols.clazz(CHRONOS_ID_OPEN_URL_REQUEST)
+        val adDanmakuEventRequest = symbols.clazz(CHRONOS_ID_AD_DANMAKU_EVENT_REQUEST)
+        val notifyCommercialEventRequest = symbols.clazz(CHRONOS_ID_NOTIFY_COMMERCIAL_EVENT_REQUEST)
 
         var installed = 0
-        if (updateDetailStateRequest != null && hasDetailStateGetters(updateDetailStateRequest, DETAIL_STATE_GETTERS)) {
+        if (updateDetailStateRequest != null) {
             installed += hookCallbackRequest(
-                handlerType = handlerType,
+                methods = symbols.methods(CHRONOS_METHOD_LOCAL_DETAIL_STATE),
                 requestType = updateDetailStateRequest,
                 label = "detailState",
             ) { request, callback, param ->
@@ -86,7 +84,7 @@ class ChronosPromotionHook(env: RoamingEnv) : BaseRoamingHook(env) {
         }
         if (openUrlRequest != null) {
             installed += hookCallbackRequest(
-                handlerType = handlerType,
+                methods = symbols.methods(CHRONOS_METHOD_LOCAL_OPEN_URL),
                 requestType = openUrlRequest,
                 label = "openUrl",
             ) { request, callback, param ->
@@ -100,7 +98,7 @@ class ChronosPromotionHook(env: RoamingEnv) : BaseRoamingHook(env) {
         }
         if (adDanmakuEventRequest != null) {
             installed += hookCallbackRequest(
-                handlerType = handlerType,
+                methods = symbols.methods(CHRONOS_METHOD_LOCAL_AD_DANMAKU_EVENT),
                 requestType = adDanmakuEventRequest,
                 label = "adDanmakuEvent",
             ) { _, callback, param ->
@@ -113,7 +111,7 @@ class ChronosPromotionHook(env: RoamingEnv) : BaseRoamingHook(env) {
         }
         if (notifyCommercialEventRequest != null) {
             installed += hookSimpleRequest(
-                handlerType = handlerType,
+                methods = symbols.methods(CHRONOS_METHOD_LOCAL_COMMERCIAL_EVENT),
                 requestType = notifyCommercialEventRequest,
                 label = "commercialEvent",
             ) { request, param ->
@@ -127,38 +125,27 @@ class ChronosPromotionHook(env: RoamingEnv) : BaseRoamingHook(env) {
         return installed
     }
 
-    private fun installLocalGetViewProgressHook(): Int {
-        val handlerType = CHRONOS_RPC_HANDLER.from(classLoader)
-        if (handlerType == null) {
-            log("startHook: ChronosPromotion local view progress handler missing")
-            return 0
-        }
-        val requestType = GET_VIEW_PROGRESS_REQUEST.from(classLoader)
+    private fun installLocalGetViewProgressHook(symbols: RestoredChronosPromotionSymbols): Int {
+        val requestType = symbols.clazz(CHRONOS_ID_GET_VIEW_PROGRESS_REQUEST)
         if (requestType == null) {
             log("startHook: ChronosPromotion GetViewProgress request missing")
             return 0
         }
-        val function2Type = KOTLIN_FUNCTION2.from(classLoader)
+        val function2Type = symbols.clazz(CHRONOS_ID_FUNCTION2)
         if (function2Type == null) {
             log("startHook: ChronosPromotion Function2 missing for local view progress")
             return 0
         }
         val replyTypes = mapOf(
-            "reply" to VIEW_PROGRESS_REPLY.from(classLoader),
-            "unitereply" to UNITE_VIEW_PROGRESS_REPLY.from(classLoader),
+            "reply" to symbols.clazz(CHRONOS_ID_VIEW_PROGRESS_REPLY),
+            "unitereply" to symbols.clazz(CHRONOS_ID_UNITE_VIEW_PROGRESS_REPLY),
         ).mapNotNull { (key, type) -> type?.let { key to it } }.toMap()
         if (replyTypes.isEmpty()) {
             log("startHook: ChronosPromotion view progress reply types missing")
             return 0
         }
 
-        val methods = handlerType.allMethods()
-            .filter { method ->
-                method.name == "invoke" &&
-                    method.parameterCount == 6
-            }
-            .distinctBy(Method::toGenericString)
-            .toList()
+        val methods = symbols.methods(CHRONOS_METHOD_LOCAL_VIEW_PROGRESS)
         methods.forEach { method ->
             env.hookBefore(method) { param ->
                 val requestClass = param.args.getOrNull(1) as? Class<*> ?: return@hookBefore
@@ -178,35 +165,24 @@ class ChronosPromotionHook(env: RoamingEnv) : BaseRoamingHook(env) {
         return methods.size
     }
 
-    private fun installLocalDmViewHook(): Int {
-        val handlerType = CHRONOS_RPC_HANDLER.from(classLoader)
-        if (handlerType == null) {
-            log("startHook: ChronosPromotion local dm view handler missing")
-            return 0
-        }
-        val requestType = GET_DM_VIEW_REQUEST.from(classLoader)
+    private fun installLocalDmViewHook(symbols: RestoredChronosPromotionSymbols): Int {
+        val requestType = symbols.clazz(CHRONOS_ID_GET_DM_VIEW_REQUEST)
         if (requestType == null) {
             log("startHook: ChronosPromotion GetDmView request missing")
             return 0
         }
-        val replyType = DM_VIEW_REPLY.from(classLoader)
+        val replyType = symbols.clazz(CHRONOS_ID_DM_VIEW_REPLY)
         if (replyType == null) {
             log("startHook: ChronosPromotion DmView reply missing")
             return 0
         }
-        val function2Type = KOTLIN_FUNCTION2.from(classLoader)
+        val function2Type = symbols.clazz(CHRONOS_ID_FUNCTION2)
         if (function2Type == null) {
             log("startHook: ChronosPromotion Function2 missing for local dm view")
             return 0
         }
 
-        val methods = handlerType.allMethods()
-            .filter { method ->
-                method.name == "invoke" &&
-                    method.parameterCount == 6
-            }
-            .distinctBy(Method::toGenericString)
-            .toList()
+        val methods = symbols.methods(CHRONOS_METHOD_LOCAL_DM_VIEW)
         methods.forEach { method ->
             env.hookBefore(method) { param ->
                 val requestClass = param.args.getOrNull(1) as? Class<*> ?: return@hookBefore
@@ -226,33 +202,31 @@ class ChronosPromotionHook(env: RoamingEnv) : BaseRoamingHook(env) {
         return methods.size
     }
 
-    private fun installRemoteHandlerHooks(): Int {
-        val remoteHandler = REMOTE_SERVICE_HANDLER.from(classLoader)
-        if (remoteHandler == null) {
+    private fun installRemoteHandlerHooks(symbols: RestoredChronosPromotionSymbols): Int {
+        if (symbols.clazz(CHRONOS_ID_REMOTE_HANDLER) == null) {
             log("startHook: ChronosPromotion remote handler missing")
             return 0
         }
 
-        return installVideoDetailStateChangeHook(remoteHandler) +
-            installViewProgressHook(remoteHandler) +
-            installCommandDanmakuHook(remoteHandler) +
-            installRemoteAddDanmakuHook(remoteHandler) +
-            installAdFloatExposureHook(remoteHandler)
+        return installVideoDetailStateChangeHook(symbols) +
+            installViewProgressHook(symbols) +
+            installCommandDanmakuHook(symbols) +
+            installRemoteAddDanmakuHook(symbols) +
+            installAdFloatExposureHook(symbols)
     }
 
-    private fun installChronosMessageSenderHook(): Int {
-        val senderType = CHRONOS_MESSAGE_SENDER.from(classLoader)
-        if (senderType == null) {
+    private fun installChronosMessageSenderHook(symbols: RestoredChronosPromotionSymbols): Int {
+        if (symbols.clazz(CHRONOS_ID_MESSAGE_SENDER) == null) {
             log("startHook: ChronosPromotion message sender missing")
             return 0
         }
-        val addCustomRequestType = ADD_CUSTOM_DANMAKU_REQUEST.from(classLoader)
-        val dmViewChangeRequestType = DM_VIEW_CHANGE_REQUEST.from(classLoader)
-        val dmViewReplyType = DM_VIEW_REPLY.from(classLoader)
-        val commandDanmakuSentType = COMMAND_DANMAKU_SENT_REQUEST.from(classLoader)
-        val commandDmListRequestType = COMMAND_DM_LIST_REQUEST.from(classLoader)
-        val commandDmListResponseType = COMMAND_DM_LIST_RESPONSE.from(classLoader)
-        val function2Type = KOTLIN_FUNCTION2.from(classLoader)
+        val addCustomRequestType = symbols.clazz(CHRONOS_ID_ADD_CUSTOM_DANMAKU_REQUEST)
+        val dmViewChangeRequestType = symbols.clazz(CHRONOS_ID_DM_VIEW_CHANGE_REQUEST)
+        val dmViewReplyType = symbols.clazz(CHRONOS_ID_DM_VIEW_REPLY)
+        val commandDanmakuSentType = symbols.clazz(CHRONOS_ID_COMMAND_DANMAKU_SENT_REQUEST)
+        val commandDmListRequestType = symbols.clazz(CHRONOS_ID_COMMAND_DM_LIST_REQUEST)
+        val commandDmListResponseType = symbols.clazz(CHRONOS_ID_COMMAND_DM_LIST_RESPONSE)
+        val function2Type = symbols.clazz(CHRONOS_ID_FUNCTION2)
         if (
             addCustomRequestType == null &&
             commandDanmakuSentType == null &&
@@ -269,13 +243,7 @@ class ChronosPromotionHook(env: RoamingEnv) : BaseRoamingHook(env) {
         }
 
         var installed = 0
-        val sendMethods = senderType.methodsNamed("e")
-            .filter { method ->
-                method.parameterCount == 2 &&
-                    Map::class.java.isAssignableFrom(method.parameterTypes[1])
-            }
-            .distinctBy(Method::toGenericString)
-            .toList()
+        val sendMethods = symbols.methods(CHRONOS_METHOD_MESSAGE_SEND)
         sendMethods.forEach { method ->
             env.hookBefore(method) { param ->
                 val request = param.args.firstOrNull() ?: return@hookBefore
@@ -312,15 +280,7 @@ class ChronosPromotionHook(env: RoamingEnv) : BaseRoamingHook(env) {
         }
 
         if (commandDmListRequestType != null && commandDmListResponseType != null && function2Type != null) {
-            val requestMethods = senderType.methodsNamed("a")
-                .filter { method ->
-                    method.parameterCount == 5 &&
-                        Map::class.java.isAssignableFrom(method.parameterTypes[1]) &&
-                        method.parameterTypes[2] == Class::class.java &&
-                        method.parameterTypes[3].name == KOTLIN_FUNCTION2
-                }
-                .distinctBy(Method::toGenericString)
-                .toList()
+            val requestMethods = symbols.methods(CHRONOS_METHOD_COMMAND_DM_LIST)
             requestMethods.forEach { method ->
                 env.hookBefore(method) { param ->
                     val request = param.args.firstOrNull() ?: return@hookBefore
@@ -349,19 +309,11 @@ class ChronosPromotionHook(env: RoamingEnv) : BaseRoamingHook(env) {
     }
 
     private fun hookCallbackRequest(
-        handlerType: Class<*>,
+        methods: List<Method>,
         requestType: Class<*>,
         label: String,
         block: (request: Any, callback: Any?, param: MethodHookParam) -> Unit,
     ): Int {
-        val methods = handlerType.allMethods()
-            .filter { method ->
-                method.parameterCount == 2 &&
-                    method.parameterTypes[0] == requestType &&
-                    method.parameterTypes[1].name == KOTLIN_FUNCTION2
-            }
-            .distinctBy(Method::toGenericString)
-            .toList()
         methods.forEach { method ->
             env.hookBefore(method) { param ->
                 val request = param.args.firstOrNull() ?: return@hookBefore
@@ -377,18 +329,11 @@ class ChronosPromotionHook(env: RoamingEnv) : BaseRoamingHook(env) {
     }
 
     private fun hookSimpleRequest(
-        handlerType: Class<*>,
+        methods: List<Method>,
         requestType: Class<*>,
         label: String,
         block: (request: Any, param: MethodHookParam) -> Unit,
     ): Int {
-        val methods = handlerType.allMethods()
-            .filter { method ->
-                method.parameterCount == 1 &&
-                    method.parameterTypes[0] == requestType
-            }
-            .distinctBy(Method::toGenericString)
-            .toList()
         methods.forEach { method ->
             env.hookBefore(method) { param ->
                 val request = param.args.firstOrNull() ?: return@hookBefore
@@ -403,17 +348,13 @@ class ChronosPromotionHook(env: RoamingEnv) : BaseRoamingHook(env) {
         return methods.size
     }
 
-    private fun installVideoDetailStateChangeHook(remoteHandler: Class<*>): Int {
-        val requestType = VIDEO_DETAIL_STATE_CHANGE_REQUEST.from(classLoader)
-        if (requestType == null || !hasDetailStateGetters(requestType, VIDEO_DETAIL_STATE_CHANGE_GETTERS)) {
+    private fun installVideoDetailStateChangeHook(symbols: RestoredChronosPromotionSymbols): Int {
+        val requestType = symbols.clazz(CHRONOS_ID_VIDEO_DETAIL_STATE_CHANGE_REQUEST)
+        if (requestType == null) {
             log("startHook: ChronosPromotion video detail state unavailable request=$requestType")
             return 0
         }
-        val method = remoteHandler.methodsNamed("onVideoDetailStateChanged")
-            .firstOrNull { candidate ->
-                candidate.parameterCount == 1 &&
-                    candidate.parameterTypes[0] == requestType
-            }
+        val method = symbols.firstMethod(CHRONOS_METHOD_REMOTE_VIDEO_DETAIL_STATE)
         if (method == null) {
             log("startHook: ChronosPromotion video detail state no hook point found")
             return 0
@@ -430,19 +371,13 @@ class ChronosPromotionHook(env: RoamingEnv) : BaseRoamingHook(env) {
         return 1
     }
 
-    private fun installViewProgressHook(remoteHandler: Class<*>): Int {
-        val detailType = VIEW_PROGRESS_DETAIL.from(classLoader)
+    private fun installViewProgressHook(symbols: RestoredChronosPromotionSymbols): Int {
+        val detailType = symbols.clazz(CHRONOS_ID_VIEW_PROGRESS_DETAIL)
         if (detailType == null) {
             log("startHook: ChronosPromotion view progress detail missing")
             return 0
         }
-        val method = remoteHandler.methodsNamed("configChronos")
-            .firstOrNull { candidate ->
-                candidate.parameterCount == 3 &&
-                    candidate.parameterTypes[0] == detailType &&
-                    candidate.parameterTypes[1] == java.lang.Long.TYPE &&
-                    candidate.parameterTypes[2] == java.lang.Long.TYPE
-            }
+        val method = symbols.firstMethod(CHRONOS_METHOD_REMOTE_VIEW_PROGRESS)
         if (method == null) {
             log("startHook: ChronosPromotion view progress no hook point found")
             return 0
@@ -458,12 +393,8 @@ class ChronosPromotionHook(env: RoamingEnv) : BaseRoamingHook(env) {
         return 1
     }
 
-    private fun installCommandDanmakuHook(remoteHandler: Class<*>): Int {
-        val method = remoteHandler.methodsNamed("setCommandDanmakus")
-            .firstOrNull { candidate ->
-                candidate.parameterCount == 1 &&
-                    List::class.java.isAssignableFrom(candidate.parameterTypes[0])
-            }
+    private fun installCommandDanmakuHook(symbols: RestoredChronosPromotionSymbols): Int {
+        val method = symbols.firstMethod(CHRONOS_METHOD_REMOTE_COMMAND_DANMAKU)
         if (method == null) {
             log("startHook: ChronosPromotion command danmaku no hook point found")
             return 0
@@ -483,16 +414,8 @@ class ChronosPromotionHook(env: RoamingEnv) : BaseRoamingHook(env) {
         return 1
     }
 
-    private fun installRemoteAddDanmakuHook(remoteHandler: Class<*>): Int {
-        val methods = remoteHandler.methodsNamed("addDanmaku")
-            .filter { candidate ->
-                candidate.parameterCount == 4 &&
-                    candidate.parameterTypes[0] == String::class.java &&
-                    candidate.parameterTypes[1] == java.lang.Integer.TYPE &&
-                    Map::class.java.isAssignableFrom(candidate.parameterTypes[3])
-            }
-            .distinctBy(Method::toGenericString)
-            .toList()
+    private fun installRemoteAddDanmakuHook(symbols: RestoredChronosPromotionSymbols): Int {
+        val methods = symbols.methods(CHRONOS_METHOD_REMOTE_ADD_DANMAKU)
         methods.forEach { method ->
             env.hookBefore(method) { param ->
                 val type = (param.args.getOrNull(1) as? Number)?.toInt() ?: return@hookBefore
@@ -513,14 +436,8 @@ class ChronosPromotionHook(env: RoamingEnv) : BaseRoamingHook(env) {
         return methods.size
     }
 
-    private fun installAdFloatExposureHook(remoteHandler: Class<*>): Int {
-        val method = remoteHandler.methodsNamed("adDanmakuExposureRequest")
-            .firstOrNull { candidate ->
-                candidate.parameterCount == 3 &&
-                    List::class.java.isAssignableFrom(candidate.parameterTypes[0]) &&
-                    candidate.parameterTypes[1] == java.lang.Long.TYPE &&
-                    candidate.parameterTypes[2] == java.lang.Long.TYPE
-            }
+    private fun installAdFloatExposureHook(symbols: RestoredChronosPromotionSymbols): Int {
+        val method = symbols.firstMethod(CHRONOS_METHOD_REMOTE_AD_FLOAT_EXPOSURE)
         if (method == null) {
             log("startHook: ChronosPromotion ad float no hook point found")
             return 0
@@ -544,21 +461,12 @@ class ChronosPromotionHook(env: RoamingEnv) : BaseRoamingHook(env) {
         return 1
     }
 
-    private fun installAdDanmakuFeedHook(): Int {
-        val delegateType = AD_DANMAKU_DELEGATE.from(classLoader)
-        if (delegateType == null) {
+    private fun installAdDanmakuFeedHook(symbols: RestoredChronosPromotionSymbols): Int {
+        if (symbols.clazz(CHRONOS_ID_AD_DANMAKU_DELEGATE) == null) {
             log("startHook: ChronosPromotion ad danmaku delegate missing")
             return 0
         }
-        val methods = delegateType.methodsNamed("feedData2Chronos")
-            .filter { candidate ->
-                candidate.parameterCount == 3 &&
-                    List::class.java.isAssignableFrom(candidate.parameterTypes[0]) &&
-                    candidate.parameterTypes[1] == java.lang.Long.TYPE &&
-                    candidate.parameterTypes[2] == java.lang.Long.TYPE
-            }
-            .distinctBy(Method::toGenericString)
-            .toList()
+        val methods = symbols.methods(CHRONOS_METHOD_AD_DANMAKU_FEED)
         methods.forEach { method ->
             env.hookBefore(method) { param ->
                 val originalList = param.args.firstOrNull() as? List<*> ?: return@hookBefore
@@ -578,13 +486,13 @@ class ChronosPromotionHook(env: RoamingEnv) : BaseRoamingHook(env) {
         return methods.size
     }
 
-    private fun installPlayerSettingTopShortcutHook(): Int {
-        val itemType = PLAYER_SETTING_TOP_ITEM.from(classLoader)
+    private fun installPlayerSettingTopShortcutHook(symbols: RestoredChronosPromotionSymbols): Int {
+        val itemType = symbols.clazz(CHRONOS_ID_PLAYER_SETTING_TOP_ITEM)
         if (itemType == null) {
             log("startHook: ChronosPromotion player setting top item missing")
             return 0
         }
-        val function0Type = KOTLIN_FUNCTION0.from(classLoader)
+        val function0Type = symbols.clazz(CHRONOS_ID_FUNCTION0)
         if (function0Type == null) {
             log("startHook: ChronosPromotion Function0 missing")
             return 0
@@ -616,22 +524,17 @@ class ChronosPromotionHook(env: RoamingEnv) : BaseRoamingHook(env) {
         return installed
     }
 
-    private fun installInteractLayerViewProgressHook(): Int {
-        val serviceType = INTERACT_LAYER_SERVICE.from(classLoader)
-        if (serviceType == null) {
+    private fun installInteractLayerViewProgressHook(symbols: RestoredChronosPromotionSymbols): Int {
+        if (symbols.clazz(CHRONOS_ID_INTERACT_LAYER_SERVICE) == null) {
             log("startHook: ChronosPromotion interact layer service missing")
             return 0
         }
-        val detailType = VIEW_PROGRESS_DETAIL.from(classLoader)
+        val detailType = symbols.clazz(CHRONOS_ID_VIEW_PROGRESS_DETAIL)
         if (detailType == null) {
             log("startHook: ChronosPromotion interact layer detail missing")
             return 0
         }
-        val method = serviceType.methodsNamed("getViewProgressDetail")
-            .firstOrNull { candidate ->
-                candidate.parameterCount == 0 &&
-                    detailType.isAssignableFrom(candidate.returnType)
-            }
+        val method = symbols.firstMethod(CHRONOS_METHOD_INTERACT_LAYER_VIEW_PROGRESS)
         if (method == null) {
             log("startHook: ChronosPromotion interact layer detail getter no hook point found")
             return 0
@@ -647,22 +550,15 @@ class ChronosPromotionHook(env: RoamingEnv) : BaseRoamingHook(env) {
         return 1
     }
 
-    private fun installGeminiOperationWidgetHooks(): Int {
-        val widgetType = GEMINI_OPERATION_WIDGET.from(classLoader)
-        if (widgetType == null) {
+    private fun installGeminiOperationWidgetHooks(symbols: RestoredChronosPromotionSymbols): Int {
+        if (symbols.clazz(CHRONOS_ID_GEMINI_OPERATION_WIDGET) == null) {
             log("startHook: ChronosPromotion gemini operation widget missing")
             return 0
         }
-        val detailType = VIEW_PROGRESS_DETAIL.from(classLoader)
+        val detailType = symbols.clazz(CHRONOS_ID_VIEW_PROGRESS_DETAIL)
         var installed = 0
 
-        val renderMethods = widgetType.methodsNamed("i")
-            .filter { method ->
-                method.parameterCount == 0 &&
-                    method.returnType == java.lang.Void.TYPE
-            }
-            .distinctBy(Method::toGenericString)
-            .toList()
+        val renderMethods = symbols.methods(CHRONOS_METHOD_GEMINI_OPERATION_RENDER)
         renderMethods.forEach { method ->
             env.hookBefore(method) { param ->
                 val widget = param.thisObject ?: return@hookBefore
@@ -673,13 +569,9 @@ class ChronosPromotionHook(env: RoamingEnv) : BaseRoamingHook(env) {
         }
         installed += renderMethods.size
 
-        val observerType = GEMINI_OPERATION_OBSERVER.from(classLoader)
+        val observerType = symbols.clazz(CHRONOS_ID_GEMINI_OPERATION_OBSERVER)
         if (observerType != null && detailType != null) {
-            val updateMethod = observerType.methodsNamed("onUpdate")
-                .firstOrNull { method ->
-                    method.parameterCount == 1 &&
-                        detailType.isAssignableFrom(method.parameterTypes[0])
-                }
+            val updateMethod = symbols.firstMethod(CHRONOS_METHOD_GEMINI_OPERATION_UPDATE)
             if (updateMethod != null) {
                 env.hookBefore(updateMethod) { param ->
                     val detail = param.args.firstOrNull() ?: return@hookBefore
@@ -710,17 +602,6 @@ class ChronosPromotionHook(env: RoamingEnv) : BaseRoamingHook(env) {
             }
         }
         return null
-    }
-
-    private fun hasDetailStateGetters(requestType: Class<*>, getters: List<String>): Boolean {
-        val existingDetailGetters = getters.filter { getter ->
-            requestType.methodsNamed(getter).any { it.parameterCount == 0 }
-        }
-        if (existingDetailGetters.isEmpty()) {
-            log("startHook: ChronosPromotion detail state getters missing $getters")
-            return false
-        }
-        return true
     }
 
     private fun openUrlBlockReason(request: Any): String? {
@@ -1560,55 +1441,51 @@ class ChronosPromotionHook(env: RoamingEnv) : BaseRoamingHook(env) {
     )
 
     private companion object {
-        private const val CHRONOS_RPC_HANDLER =
-            "tv.danmaku.biliplayerv2.service.interact.biz.chronos.chronosrpc.a"
-        private const val CHRONOS_LOCAL_HANDLER = "ei1.j"
-        private const val REMOTE_SERVICE_HANDLER =
-            "tv.danmaku.biliplayerv2.service.interact.biz.chronos.chronosrpc.remote.RemoteServiceHandler"
-        private const val CHRONOS_MESSAGE_SENDER = "di1.b"
-        private const val ADD_CUSTOM_DANMAKU_REQUEST =
-            "tv.danmaku.biliplayerv2.service.interact.biz.chronos.chronosrpc.methods.send.AddCustomDanmaku\$Request"
-        private const val DM_VIEW_CHANGE_REQUEST =
-            "tv.danmaku.biliplayerv2.service.interact.biz.chronos.chronosrpc.methods.send.DmViewChange\$Request"
-        private const val COMMAND_DANMAKU_SENT_REQUEST =
-            "tv.danmaku.biliplayerv2.service.interact.biz.chronos.chronosrpc.methods.send.CommandDanmakuSent\$Request"
-        private const val COMMAND_DM_LIST_REQUEST =
-            "tv.danmaku.biliplayerv2.service.interact.biz.chronos.chronosrpc.methods.send.CommandDmListRequest\$Request"
-        private const val COMMAND_DM_LIST_RESPONSE =
-            "tv.danmaku.biliplayerv2.service.interact.biz.chronos.chronosrpc.methods.send.CommandDmListRequest\$Response"
-        private const val AD_DANMAKU_DELEGATE =
-            "tv.danmaku.biliplayerv2.service.interact.biz.chronos.AdDanmakuDelegate"
-        private const val INTERACT_LAYER_SERVICE =
-            "tv.danmaku.biliplayerv2.service.interact.biz.InteractLayerService"
-        private const val GEMINI_OPERATION_WIDGET =
-            "com.bilibili.app.gemini.player.widget.operation.a"
-        private const val GEMINI_OPERATION_OBSERVER =
-            "com.bilibili.app.gemini.player.widget.operation.a\$d"
-        private const val PLAYER_SETTING_TOP_ITEM = "com.bilibili.playerbizcommonv2.widget.setting.I"
-        private const val VIEW_PROGRESS_DETAIL =
-            "tv.danmaku.biliplayerv2.service.interact.biz.model.viewprogress.uniteviewprogress.ViewProgressDetail"
-        private const val VIEW_PROGRESS_REPLY =
-            "com.bapis.bilibili.app.view.v1.ViewProgressReply"
-        private const val UNITE_VIEW_PROGRESS_REPLY =
-            "com.bapis.bilibili.app.viewunite.v1.ViewProgressReply"
-        private const val DM_VIEW_REPLY =
-            "com.bapis.bilibili.community.service.dm.v1.DmViewReply"
-        private const val GET_DM_VIEW_REQUEST =
-            "tv.danmaku.biliplayerv2.service.interact.biz.chronos.chronosrpc.methods.receive.GetDmView\$Request"
-        private const val GET_VIEW_PROGRESS_REQUEST =
-            "tv.danmaku.biliplayerv2.service.interact.biz.chronos.chronosrpc.methods.receive.GetViewProgress\$Request"
-        private const val UPDATE_VIDEO_DETAIL_STATE_REQUEST =
-            "tv.danmaku.biliplayerv2.service.interact.biz.chronos.chronosrpc.methods.receive.UpdateVideoDetailState\$Request"
-        private const val VIDEO_DETAIL_STATE_CHANGE_REQUEST =
-            "tv.danmaku.biliplayerv2.service.interact.biz.chronos.chronosrpc.methods.send.VideoDetailStateChange\$Request"
-        private const val OPEN_URL_SCHEME_REQUEST =
-            "tv.danmaku.biliplayerv2.service.interact.biz.chronos.chronosrpc.methods.receive.OpenUrlScheme\$Request"
-        private const val AD_DANMAKU_EVENT_REQUEST =
-            "tv.danmaku.biliplayerv2.service.interact.biz.chronos.chronosrpc.methods.receive.AdDanmakuEvent\$Request"
-        private const val NOTIFY_COMMERCIAL_EVENT_REQUEST =
-            "tv.danmaku.biliplayerv2.service.interact.biz.chronos.chronosrpc.methods.receive.NotifyCommercialEvent\$Request"
-        private const val KOTLIN_FUNCTION0 = "kotlin.jvm.functions.Function0"
-        private const val KOTLIN_FUNCTION2 = "kotlin.jvm.functions.Function2"
+        private const val CHRONOS_ID_RPC_HANDLER = "rpcHandler"
+        private const val CHRONOS_ID_LOCAL_HANDLER = "localHandler"
+        private const val CHRONOS_ID_REMOTE_HANDLER = "remoteHandler"
+        private const val CHRONOS_ID_MESSAGE_SENDER = "messageSender"
+        private const val CHRONOS_ID_ADD_CUSTOM_DANMAKU_REQUEST = "addCustomDanmakuRequest"
+        private const val CHRONOS_ID_DM_VIEW_CHANGE_REQUEST = "dmViewChangeRequest"
+        private const val CHRONOS_ID_COMMAND_DANMAKU_SENT_REQUEST = "commandDanmakuSentRequest"
+        private const val CHRONOS_ID_COMMAND_DM_LIST_REQUEST = "commandDmListRequest"
+        private const val CHRONOS_ID_COMMAND_DM_LIST_RESPONSE = "commandDmListResponse"
+        private const val CHRONOS_ID_AD_DANMAKU_DELEGATE = "adDanmakuDelegate"
+        private const val CHRONOS_ID_INTERACT_LAYER_SERVICE = "interactLayerService"
+        private const val CHRONOS_ID_GEMINI_OPERATION_WIDGET = "geminiOperationWidget"
+        private const val CHRONOS_ID_GEMINI_OPERATION_OBSERVER = "geminiOperationObserver"
+        private const val CHRONOS_ID_PLAYER_SETTING_TOP_ITEM = "playerSettingTopItem"
+        private const val CHRONOS_ID_VIEW_PROGRESS_DETAIL = "viewProgressDetail"
+        private const val CHRONOS_ID_VIEW_PROGRESS_REPLY = "viewProgressReply"
+        private const val CHRONOS_ID_UNITE_VIEW_PROGRESS_REPLY = "uniteViewProgressReply"
+        private const val CHRONOS_ID_DM_VIEW_REPLY = "dmViewReply"
+        private const val CHRONOS_ID_GET_DM_VIEW_REQUEST = "getDmViewRequest"
+        private const val CHRONOS_ID_GET_VIEW_PROGRESS_REQUEST = "getViewProgressRequest"
+        private const val CHRONOS_ID_UPDATE_DETAIL_STATE_REQUEST = "updateDetailStateRequest"
+        private const val CHRONOS_ID_VIDEO_DETAIL_STATE_CHANGE_REQUEST = "videoDetailStateChangeRequest"
+        private const val CHRONOS_ID_OPEN_URL_REQUEST = "openUrlRequest"
+        private const val CHRONOS_ID_AD_DANMAKU_EVENT_REQUEST = "adDanmakuEventRequest"
+        private const val CHRONOS_ID_NOTIFY_COMMERCIAL_EVENT_REQUEST = "notifyCommercialEventRequest"
+        private const val CHRONOS_ID_FUNCTION0 = "function0"
+        private const val CHRONOS_ID_FUNCTION2 = "function2"
+        private const val CHRONOS_METHOD_LOCAL_DETAIL_STATE = "localDetailState"
+        private const val CHRONOS_METHOD_LOCAL_OPEN_URL = "localOpenUrl"
+        private const val CHRONOS_METHOD_LOCAL_AD_DANMAKU_EVENT = "localAdDanmakuEvent"
+        private const val CHRONOS_METHOD_LOCAL_COMMERCIAL_EVENT = "localCommercialEvent"
+        private const val CHRONOS_METHOD_LOCAL_VIEW_PROGRESS = "localViewProgress"
+        private const val CHRONOS_METHOD_LOCAL_DM_VIEW = "localDmView"
+        private const val CHRONOS_METHOD_REMOTE_VIDEO_DETAIL_STATE = "remoteVideoDetailState"
+        private const val CHRONOS_METHOD_REMOTE_VIEW_PROGRESS = "remoteViewProgress"
+        private const val CHRONOS_METHOD_REMOTE_COMMAND_DANMAKU = "remoteCommandDanmaku"
+        private const val CHRONOS_METHOD_REMOTE_ADD_DANMAKU = "remoteAddDanmaku"
+        private const val CHRONOS_METHOD_REMOTE_AD_FLOAT_EXPOSURE = "remoteAdFloatExposure"
+        private const val CHRONOS_METHOD_MESSAGE_SEND = "messageSend"
+        private const val CHRONOS_METHOD_COMMAND_DM_LIST = "commandDmList"
+        private const val CHRONOS_METHOD_AD_DANMAKU_FEED = "adDanmakuFeed"
+        private const val CHRONOS_METHOD_PLAYER_SETTING_TOP_CTOR = "playerSettingTopConstructor"
+        private const val CHRONOS_METHOD_INTERACT_LAYER_VIEW_PROGRESS = "interactLayerViewProgress"
+        private const val CHRONOS_METHOD_GEMINI_OPERATION_RENDER = "geminiOperationRender"
+        private const val CHRONOS_METHOD_GEMINI_OPERATION_UPDATE = "geminiOperationUpdate"
         private const val PLAYER_WATCH_LATER_TITLE_RES = "playerbaseres_global_string_163"
         private const val MAX_LOG_VALUE_LENGTH = 80
         private const val MAX_COLLECTION_TOKEN_SCAN = 12

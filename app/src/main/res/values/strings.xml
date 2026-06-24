@@ -187,6 +187,16 @@
     <string name="about_access_key_title">获取 AccessKey</string>
     <string name="about_access_key_summary">点击尝试获取当前登录账号的 AccessKey。</string>
     <string name="hidden_features_entry_title">隐藏功能入口</string>
+    <string name="symbol_cache_refresh_title">清除缓存数据</string>
+    <string name="symbol_cache_refresh_no_status">暂无混淆扫描结果。请先启动 B 站，或点击此项发起重扫。</string>
+    <string name="symbol_cache_refresh_no_report">暂无混淆扫描报告。</string>
+    <string name="symbol_cache_refresh_summary_with_time">%1$s\n更新时间：%2$s</string>
+    <string name="symbol_cache_refresh_dialog_title">混淆扫描缓存</string>
+    <string name="symbol_cache_refresh_dialog_message">当前扫描结果：\n%1$s\n\n</string>
+    <string name="symbol_cache_refresh_confirm">清除并重扫</string>
+    <string name="symbol_cache_refresh_running_title">正在更新缓存</string>
+    <string name="symbol_cache_refresh_running_message">正在请求 B 站进程热重载并刷新混淆扫描缓存。</string>
+    <string name="symbol_cache_refresh_failed_title">刷新失败</string>
 
     <!-- 對話框 / Toast -->
     <string name="version_hidden_entry_toast">已显示隐藏入口</string>

@@ -3,20 +3,21 @@ package io.github.bbzq.feats.hook
 import android.view.View
 import io.github.bbzq.ModuleSettings
 import io.github.bbzq.feats.BaseRoamingHook
-import io.github.bbzq.feats.callMethod
-import io.github.bbzq.feats.allFields
 import io.github.bbzq.feats.from
+import io.github.bbzq.feats.callMethod
 import io.github.bbzq.feats.hookAfter
 import io.github.bbzq.feats.hookAfterMethod
 import io.github.bbzq.feats.hookAfterAllMethods
-import io.github.bbzq.feats.methodsNamed
 import java.lang.reflect.Field
 import java.lang.reflect.Method
-import java.lang.reflect.Modifier
+import java.util.Collections
+import java.util.WeakHashMap
 
 class HomeComponentHideHook(env: io.github.bbzq.feats.RoamingEnv) : BaseRoamingHook(env) {
     private val knownComponents = linkedMapOf<String, String>()
     private var homeRecommendFieldWriteFailedLogged = false
+    private val attachedLayoutListeners =
+        Collections.synchronizedMap(WeakHashMap<View, android.view.ViewTreeObserver.OnGlobalLayoutListener>())
 
     override fun startHook() {
         if (env.processName != env.packageName) return
@@ -57,19 +58,17 @@ class HomeComponentHideHook(env: io.github.bbzq.feats.RoamingEnv) : BaseRoamingH
     }
 
     private fun hookHomeComponentCatalog(): Int {
-        var count = 0
-        BASE_HOME_FRAGMENT_CLASSES.mapNotNull { it.from(classLoader) }.forEach { baseHomeFragmentClass ->
-            listOf("onAttach", "onCreate", "onCreateView", "onViewCreated", "onResume").forEach { methodName ->
-                count += env.hookAfterAllMethods(baseHomeFragmentClass, methodName) { param ->
-                    runCatching {
-                        collectHomeComponentCatalog(param.thisObject)
-                    }.onFailure {
-                        log("HomeComponentHide component catalog hook failed at ${baseHomeFragmentClass.name}.$methodName", it)
-                    }
+        val methods = env.symbols?.homeComponentHide?.restore(classLoader)?.baseHomeFragmentMethods.orEmpty()
+        methods.forEach { method ->
+            env.hookAfter(method) { param ->
+                runCatching {
+                    collectHomeComponentCatalog(param.thisObject)
+                }.onFailure {
+                    log("HomeComponentHide component catalog hook failed at ${method.declaringClass.name}.${method.name}", it)
                 }
             }
         }
-        return count
+        return methods.size
     }
 
     private fun collectHomeComponentCatalog(fragment: Any?) {
@@ -146,13 +145,13 @@ class HomeComponentHideHook(env: io.github.bbzq.feats.RoamingEnv) : BaseRoamingH
     }
 
     private fun attachPersistentHider(root: View, className: String) {
-        if (root.getTag(LISTENER_TAG_KEY) != null) return
+        if (attachedLayoutListeners.containsKey(root)) return
         val listener = android.view.ViewTreeObserver.OnGlobalLayoutListener {
             applyVisibility(root, className)
         }
         runCatching {
             root.viewTreeObserver?.addOnGlobalLayoutListener(listener)
-            root.setTag(LISTENER_TAG_KEY, listener)
+            attachedLayoutListeners[root] = listener
         }.onFailure {
             log("HomeComponentHide failed to attach listener for $className", it)
         }
@@ -163,38 +162,10 @@ class HomeComponentHideHook(env: io.github.bbzq.feats.RoamingEnv) : BaseRoamingH
     }
 
     private fun hookHomeRecommendItems(): Int {
-        val responseClasses = PEGASUS_RESPONSE_CLASSES.mapNotNull { it.from(classLoader) }
-        val holderDataClass = PEGASUS_HOLDER_DATA.from(classLoader) ?: return 0
-        if (responseClasses.isEmpty()) return 0
-
-        val getHolderType = holderDataClass.methodsNamed("getHolderType")
-            .firstOrNull {
-                it.parameterCount == 0 &&
-                    it.returnType == String::class.java &&
-                    !Modifier.isStatic(it.modifiers) &&
-                    !Modifier.isAbstract(it.modifiers)
-            }
-            ?: return 0
-        val getBizType = holderDataClass.methodsNamed("getBizType")
-            .firstOrNull {
-                it.parameterCount == 0 &&
-                    !Modifier.isStatic(it.modifiers) &&
-                    !Modifier.isAbstract(it.modifiers)
-            }
+        val feedSymbols = env.symbols?.homeRecommendFeed?.restore(classLoader) ?: return 0
         var count = 0
-        responseClasses.forEach { responseClass ->
-            val getItems = responseClass.methodsNamed("getItems")
-                .firstOrNull {
-                    it.parameterCount == 0 &&
-                        List::class.java.isAssignableFrom(it.returnType) &&
-                        !Modifier.isStatic(it.modifiers) &&
-                        !Modifier.isAbstract(it.modifiers)
-                }
-                ?: return@forEach
-            val itemsField = responseClass.allFields()
-                .filter { List::class.java.isAssignableFrom(it.type) }
-                .singleOrNull()
-
+        feedSymbols.responseGetItems.forEach { response ->
+            val getItems = response.getItems
             env.hookAfter(getItems) { param ->
                 val items = param.result as? List<*> ?: return@hookAfter
                 val hiddenKeys = ModuleSettings.getHiddenHomeRecommendItems(prefs)
@@ -204,7 +175,7 @@ class HomeComponentHideHook(env: io.github.bbzq.feats.RoamingEnv) : BaseRoamingH
                 var removed = 0
 
                 items.forEachIndexed { index, item ->
-                    val entry = item?.extractRecommendItemEntry(index, getHolderType, getBizType)
+                    val entry = item?.extractRecommendItemEntry(index, feedSymbols.getHolderType, feedSymbols.getBizType)
                     if (entry == null) {
                         filtered += item
                         return@forEachIndexed
@@ -222,7 +193,7 @@ class HomeComponentHideHook(env: io.github.bbzq.feats.RoamingEnv) : BaseRoamingH
                 if (removed == 0) return@hookAfter
 
                 param.result = filtered
-                writeBackFilteredItems(param.thisObject, itemsField, filtered)
+                writeBackFilteredItems(param.thisObject, response.itemsField, filtered)
                 log(
                     "HomeComponentHide removed $removed home item(s) " +
                         "from ${getItems.declaringClass.name}.${getItems.name}",
@@ -313,13 +284,6 @@ class HomeComponentHideHook(env: io.github.bbzq.feats.RoamingEnv) : BaseRoamingH
             "tv.danmaku.p9138bili.p9170home.p9173tab.p9174page.BaseHomeFragment",
         )
         private val BASE_HOME_FRAGMENT_NAMES = BASE_HOME_FRAGMENT_CLASSES.map { it.lowercase() }
-        private val PEGASUS_RESPONSE_CLASSES = arrayOf(
-            "com.bilibili.pegasus.data.base.PegasusResponse",
-            "com.bilibili.pegasus.p5730data.p5731base.PegasusResponse",
-            "com.bilibili.pegasus.p5730data.request.PegasusResponseWrapper",
-        )
-        private const val PEGASUS_HOLDER_DATA = "com.bilibili.pegasus.PegasusHolderData"
-        private const val LISTENER_TAG_KEY = 0x7F0B1120
         private val HOME_CONTAINER_KEYWORDS = listOf(
             "basehomefragment",
             "homefragment",

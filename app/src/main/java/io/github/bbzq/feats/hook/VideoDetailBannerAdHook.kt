@@ -8,15 +8,13 @@ import io.github.bbzq.ModuleSettings
 import io.github.bbzq.ModuleSettingsBridge
 import io.github.bbzq.feats.BaseRoamingHook
 import io.github.bbzq.feats.RoamingEnv
-import io.github.bbzq.feats.from
 import io.github.bbzq.feats.hookAfter
 import io.github.bbzq.feats.hookBefore
-import io.github.bbzq.feats.methodsNamed
+import io.github.bbzq.feats.symbol.RestoredVideoDetailBannerAdSymbols
 import java.lang.reflect.Constructor
 import java.lang.reflect.InvocationHandler
 import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
-import java.lang.reflect.Modifier
 import java.lang.reflect.Proxy
 import java.util.IdentityHashMap
 
@@ -35,38 +33,24 @@ class VideoDetailBannerAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
             return
         }
 
+        val symbols = env.symbols?.videoDetailBannerAd?.restore(classLoader)
+        if (symbols == null) {
+            log("startHook: VideoDetailBannerAd skipped because symbols are unavailable")
+            return
+        }
+
         var installed = 0
-        if (installGAdVideoDetailProxy()) installed++
-        installed += installRelateGameComponentBlock()
+        if (installGAdVideoDetailProxy(symbols)) installed++
+        installed += installRelateGameComponentBlock(symbols)
         if (installed == 0) {
             log("startHook: VideoDetailBannerAd no hook point found")
         }
     }
 
-    private fun installGAdVideoDetailProxy(): Boolean {
-        val bizKt = G_AD_BIZ_KT.from(classLoader)
-        val videoDetailType = G_AD_VIDEO_DETAIL.from(classLoader)
-        val underPlayerType = I_AD_UNDER_PLAYER.from(classLoader)
-        val relateType = I_AD_VIDEO_RELATE.from(classLoader)
-        val merchandiseType = I_AD_MERCHANDISE.from(classLoader)
-        if (bizKt == null || videoDetailType == null || underPlayerType == null) {
-            log(
-                "startHook: VideoDetailBannerAd missing " +
-                    "bizKt=$bizKt videoDetail=$videoDetailType underPlayer=$underPlayerType",
-            )
-            return false
-        }
-
-        val getVideoDetail = bizKt.methodsNamed("getGAdVideoDetail")
-            .firstOrNull {
-                it.parameterCount == 0 &&
-                    Modifier.isStatic(it.modifiers) &&
-                    videoDetailType.isAssignableFrom(it.returnType)
-            }
-        if (getVideoDetail == null) {
-            log("startHook: VideoDetailBannerAd no hook point found")
-            return false
-        }
+    private fun installGAdVideoDetailProxy(symbols: RestoredVideoDetailBannerAdSymbols): Boolean {
+        val getVideoDetail = symbols.getVideoDetail ?: return false
+        val videoDetailType = symbols.videoDetailType ?: return false
+        val underPlayerType = symbols.underPlayerType ?: return false
 
         env.hookAfter(getVideoDetail) { param ->
             runCatching {
@@ -76,8 +60,8 @@ class VideoDetailBannerAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
                     original = original,
                     videoDetailType = videoDetailType,
                     underPlayerType = underPlayerType,
-                    relateType = relateType,
-                    merchandiseType = merchandiseType,
+                    relateType = symbols.relateType,
+                    merchandiseType = symbols.merchandiseType,
                 )
             }.onFailure {
                 log("VideoDetailBannerAd hook failed at ${getVideoDetail.declaringClass.name}.${getVideoDetail.name}", it)
@@ -85,51 +69,16 @@ class VideoDetailBannerAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
         }
         log(
             "startHook: VideoDetailBannerAd at ${getVideoDetail.declaringClass.name}.${getVideoDetail.name}, " +
-                "relate=${relateType != null} merchandise=${merchandiseType != null}",
+                "relate=${symbols.relateType != null} merchandise=${symbols.merchandiseType != null}",
         )
         return true
     }
 
-    private fun installRelateGameComponentBlock(): Int {
-        val baseComponent = GEMINI_BINDING_COMPONENT.from(classLoader)
-        val simpleViewEntry = GEMINI_SIMPLE_VIEW_ENTRY.from(classLoader)
-        val unit = KOTLIN_UNIT.from(classLoader)
-            ?.getDeclaredField("INSTANCE")
-            ?.apply { isAccessible = true }
-            ?.get(null)
-        if (baseComponent == null || simpleViewEntry == null || unit == null) {
-            log(
-                "startHook: VideoDetailBannerAd relate game missing " +
-                    "component=$baseComponent viewEntry=$simpleViewEntry unit=$unit",
-            )
-            return 0
-        }
-        val simpleViewEntryConstructor = runCatching {
-            simpleViewEntry.getDeclaredConstructor(View::class.java)
-                .apply { isAccessible = true }
-        }.getOrElse {
-            log("startHook: VideoDetailBannerAd relate game view entry constructor missing: ${it.message}")
-            return 0
-        }
-
-        val createViewEntry = baseComponent.methodsNamed("createViewEntry")
-            .firstOrNull {
-                it.parameterCount == 2 &&
-                    it.parameterTypes[0] == Context::class.java &&
-                    it.parameterTypes[1] == ViewGroup::class.java
-            }
-        val bindToView = baseComponent.methodsNamed("bindToView")
-            .firstOrNull {
-                it.parameterCount == 2 &&
-                    it.parameterTypes[1].name == "kotlin.coroutines.Continuation"
-            }
-        if (createViewEntry == null || bindToView == null) {
-            log(
-                "startHook: VideoDetailBannerAd relate game no hook point " +
-                    "create=$createViewEntry bind=$bindToView",
-            )
-            return 0
-        }
+    private fun installRelateGameComponentBlock(symbols: RestoredVideoDetailBannerAdSymbols): Int {
+        val simpleViewEntryConstructor = symbols.simpleViewEntryConstructor ?: return 0
+        val createViewEntry = symbols.createViewEntry ?: return 0
+        val bindToView = symbols.bindToView ?: return 0
+        val unit = symbols.kotlinUnit ?: return 0
 
         env.hookBefore(createViewEntry) { param ->
             runCatching {
@@ -150,7 +99,7 @@ class VideoDetailBannerAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
                 log("VideoDetailBannerAd relate bindToView failed", it)
             }
         }
-        log("startHook: VideoDetailBannerAd relate game at ${baseComponent.name}.createViewEntry/bindToView")
+        log("startHook: VideoDetailBannerAd relate game at ${createViewEntry.declaringClass.name}.createViewEntry/bindToView")
         return 2
     }
 
@@ -335,17 +284,6 @@ class VideoDetailBannerAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
     }
 
     private companion object {
-        private const val G_AD_BIZ_KT = "com.bilibili.gripper.api.ad.biz.GAdBizKt"
-        private const val G_AD_VIDEO_DETAIL = "com.bilibili.gripper.api.ad.biz.GAdVideoDetail"
-        private const val I_AD_UNDER_PLAYER =
-            "com.bilibili.gripper.api.ad.biz.videodetail.underplayer.IAdUnderPlayer"
-        private const val I_AD_VIDEO_RELATE =
-            "com.bilibili.gripper.api.ad.biz.videodetail.relate.IAdVideoRelate"
-        private const val I_AD_MERCHANDISE =
-            "com.bilibili.gripper.api.ad.biz.videodetail.merchandise.IAdMerchandise"
-        private const val GEMINI_BINDING_COMPONENT = "com.bilibili.app.gemini.ui.m"
-        private const val GEMINI_SIMPLE_VIEW_ENTRY = "com.bilibili.app.gemini.ui.UIComponent\$b"
-        private const val KOTLIN_UNIT = "kotlin.Unit"
         private const val RELATE_GAME_COMPONENT =
             "com.bilibili.ship.theseus.united.page.intro.module.relate.game.g"
         private val BLOCKED_METHODS = setOf("getUpperAdView", "getUpperHDView", "getUpperNestView")

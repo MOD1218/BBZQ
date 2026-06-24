@@ -4,17 +4,15 @@ import io.github.bbzq.ModuleSettings
 import io.github.bbzq.feats.BaseRoamingHook
 import io.github.bbzq.feats.RoamingEnv
 import io.github.bbzq.feats.allFields
-import io.github.bbzq.feats.from
 import io.github.bbzq.feats.getObjectField
 import io.github.bbzq.feats.hookAfter
-import io.github.bbzq.feats.methodOrNull
-import java.lang.reflect.Method
 
 class BottomBarHook(env: RoamingEnv) : BaseRoamingHook(env) {
     override fun startHook() {
         ModuleSettings.refreshKnownBottomBarItemsCache(prefs)
-        val parserMethods = findParserMethods()
-        val resourceMethods = findResourceManagerMethods()
+        val symbols = env.symbols?.bottomBar?.restore(classLoader)
+        val parserMethods = symbols?.parserMethods.orEmpty()
+        val resourceMethods = symbols?.resourceMethods.orEmpty()
 
         parserMethods.forEach { method ->
             env.hookAfter(method) { param ->
@@ -52,101 +50,6 @@ class BottomBarHook(env: RoamingEnv) : BaseRoamingHook(env) {
         } else {
             log("startHook: BottomBar, methods=$totalMethods")
         }
-    }
-
-    private fun findParserMethods(): List<Method> = buildList {
-        addFastJsonMethod(
-            className = "com.alibaba.fastjson.JSON",
-            methodName = "parseObject",
-            parameterTypeNames = arrayOf(
-                "java.lang.String",
-                "java.lang.reflect.Type",
-                "int",
-                "[Lcom.alibaba.fastjson.parser.Feature;",
-            ),
-        )
-        addFastJsonMethod(
-            className = "com.alibaba.fastjson.JSON",
-            methodName = "parseObject",
-            parameterTypeNames = arrayOf(
-                "java.lang.String",
-                "java.lang.Class",
-                "int",
-                "[Lcom.alibaba.fastjson.parser.Feature;",
-            ),
-        )
-        addFastJsonMethod(
-            className = "com.alibaba.fastjson2.JSON",
-            methodName = "parseObject",
-            parameterTypeNames = arrayOf(
-                "java.lang.String",
-                "java.lang.reflect.Type",
-                "[Lcom.alibaba.fastjson2.JSONReader\$Feature;",
-            ),
-        )
-        addGsonMethod(
-            methodName = "fromJson",
-            parameterTypeNames = arrayOf(
-                "java.lang.String",
-                "java.lang.reflect.Type",
-            ),
-        )
-        addGsonMethod(
-            methodName = "fromJson",
-            parameterTypeNames = arrayOf(
-                "java.io.Reader",
-                "java.lang.reflect.Type",
-            ),
-        )
-    }.distinctBy(Method::toGenericString)
-
-    private fun MutableList<Method>.addFastJsonMethod(
-        className: String,
-        methodName: String,
-        parameterTypeNames: Array<String>,
-    ) {
-        val parameterTypes = resolveParameterTypes(parameterTypeNames) ?: return
-        val method = className.from(classLoader)
-            ?.methodOrNull(methodName, *parameterTypes)
-            ?: return
-        add(method)
-    }
-
-    private fun MutableList<Method>.addGsonMethod(
-        methodName: String,
-        parameterTypeNames: Array<String>,
-    ) {
-        val parameterTypes = resolveParameterTypes(parameterTypeNames) ?: return
-        val method = "com.google.gson.Gson".from(classLoader)
-            ?.methodOrNull(methodName, *parameterTypes)
-            ?: return
-        add(method)
-    }
-
-    private fun resolveParameterTypes(typeNames: Array<String>): Array<Class<*>>? =
-        typeNames.map(::resolveParameterType)
-            .takeIf { it.none { type -> type == null } }
-            ?.filterNotNull()
-            ?.toTypedArray()
-
-    private fun findResourceManagerMethods(): List<Method> = RESOURCE_MANAGER_CLASSES
-        .mapNotNull { it.from(classLoader) }
-        .flatMap { type ->
-            type.declaredMethods.asSequence()
-                .filter { method ->
-                    method.name in RESOURCE_MANAGER_METHOD_NAMES &&
-                        List::class.java.isAssignableFrom(method.returnType) &&
-                        method.parameterCount == 2 &&
-                        method.parameterTypes.firstOrNull() == Int::class.javaPrimitiveType &&
-                        List::class.java.isAssignableFrom(method.parameterTypes[1])
-                }
-                .toList()
-        }
-        .distinctBy(Method::toGenericString)
-
-    private fun resolveParameterType(typeName: String): Class<*>? = when (typeName) {
-        "int" -> Int::class.javaPrimitiveType
-        else -> typeName.from(classLoader)
     }
 
     private fun dispatch(rawResult: Any?): Any? {
@@ -347,10 +250,5 @@ class BottomBarHook(env: RoamingEnv) : BaseRoamingHook(env) {
             "tv.danmaku.bili.ui.main2.resource.MainResourceManager\$TabResponse",
             "tv.danmaku.p9138bili.p9228ui.main2.resource.MainResourceManager\$TabResponse",
         )
-        private val RESOURCE_MANAGER_CLASSES = setOf(
-            "tv.danmaku.bili.ui.main2.resource.MainResourceManager",
-            "tv.danmaku.p9138bili.p9228ui.main2.resource.MainResourceManager",
-        )
-        private val RESOURCE_MANAGER_METHOD_NAMES = setOf("m171910c", "m171911d")
     }
 }

@@ -12,38 +12,26 @@ import io.github.bbzq.feats.BaseRoamingHook
 import io.github.bbzq.feats.RoamingEnv
 import io.github.bbzq.feats.allFields
 import io.github.bbzq.feats.allMethods
-import io.github.bbzq.feats.from
 import io.github.bbzq.feats.hookAfter
-import java.lang.reflect.Method
 import java.util.concurrent.ConcurrentHashMap
 
 class CommentPictureHook(env: RoamingEnv) : BaseRoamingHook(env) {
     override fun startHook() {
         var count = 0
-        COMMENT_IMAGE_VIEWER_CLASSES.forEach { className ->
-            val type = className.from(classLoader) ?: return@forEach
-            val methods = type.allMethods()
-                .filter {
-                    it.name == "initView" &&
-                        it.parameterCount == 1 &&
-                        View::class.java.isAssignableFrom(it.parameterTypes[0])
-                }
-                .distinctBy(Method::toGenericString)
-                .toList()
-            methods.forEach { method ->
-                env.hookAfter(method) { param ->
-                    runCatching {
-                        if (!ModuleSettings.isCommentPictureViewEnabled(prefs)) return@runCatching
-                        val rootView = param.args.firstOrNull() as? View ?: return@runCatching
-                        val fragment = param.thisObject ?: return@runCatching
-                        injectPopupMenu(fragment, rootView)
-                    }.onFailure {
-                        log("Comment picture hook failed at ${method.declaringClass.name}.${method.name}", it)
-                    }
+        val methods = env.symbols?.commentPicture?.restore(classLoader)?.initViewMethods.orEmpty()
+        methods.forEach { method ->
+            env.hookAfter(method) { param ->
+                runCatching {
+                    if (!ModuleSettings.isCommentPictureViewEnabled(prefs)) return@runCatching
+                    val rootView = param.args.firstOrNull() as? View ?: return@runCatching
+                    val fragment = param.thisObject ?: return@runCatching
+                    injectPopupMenu(fragment, rootView)
+                }.onFailure {
+                    log("Comment picture hook failed at ${method.declaringClass.name}.${method.name}", it)
                 }
             }
-            count += methods.size
         }
+        count += methods.size
         log("startHook: CommentPicture, methods=$count")
     }
 
@@ -177,11 +165,6 @@ class CommentPictureHook(env: RoamingEnv) : BaseRoamingHook(env) {
     private companion object {
         private const val TAG_COMMENT_PICTURE_HOOKED = -0x21b10c
 
-        private val COMMENT_IMAGE_VIEWER_CLASSES = listOf(
-            "com.bilibili.app.comment3.ui.widget.imagecardviewer.CommentImageCardViewerDialogFragment",
-            "com.bilibili.p4439app.comment3.p4518ui.widget.imagecardviewer.CommentImageCardViewerDialogFragment",
-            "com.bilibili.app.comment.ui.image.CommentImageCardViewerDialogFragment",
-        )
     }
 }
 

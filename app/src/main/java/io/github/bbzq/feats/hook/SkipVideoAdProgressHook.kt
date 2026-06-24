@@ -10,8 +10,8 @@ import io.github.bbzq.feats.RoamingEnv
 import io.github.bbzq.feats.allFields
 import io.github.bbzq.feats.allMethods
 import io.github.bbzq.feats.callStaticMethod
-import io.github.bbzq.feats.from
 import io.github.bbzq.feats.hookAfter
+import io.github.bbzq.feats.symbol.RestoredSkipVideoAdProgressSymbols
 import java.lang.reflect.Field
 import java.lang.reflect.Method
 import java.util.concurrent.ConcurrentHashMap
@@ -26,24 +26,29 @@ class SkipVideoAdProgressHook(env: RoamingEnv) : BaseRoamingHook(env) {
     private val hookedProgressDrawMethods = ConcurrentHashMap.newKeySet<String>()
     private val reflectionFailureLogs = ConcurrentHashMap.newKeySet<String>()
 
-    private val panelWidgetKtClass by lazy(LazyThreadSafetyMode.NONE) {
-        PANEL_WIDGET_KT_CLASS.from(classLoader)
-    }
+    private var restoredSymbols: RestoredSkipVideoAdProgressSymbols? = null
+    private val panelWidgetKtClass: Class<*>?
+        get() = restoredSymbols?.panelWidgetKtClass
 
     override fun startHook() {
         if (env.processName != env.packageName) return
         ModuleSettings.refreshSkipVideoAdCache(prefs)
         if (!ModuleSettings.isSkipVideoAdEnabledCached(prefs)) return
+        val symbols = env.symbols?.skipVideoAdProgress?.restore(classLoader)
+        if (symbols == null) {
+            log("startHook: SkipVideoAdProgress skipped because symbols are unavailable")
+            return
+        }
+        restoredSymbols = symbols
 
-        val count = hookProgressTrackDraw() +
-            hookStorySeekBarLifecycle() +
-            hookInlineProgressUpdates()
+        val count = hookProgressTrackDraw(symbols) +
+            hookStorySeekBarLifecycle(symbols) +
+            hookInlineProgressUpdates(symbols)
         log("startHook: SkipVideoAdProgress, methods=$count")
     }
 
-    private fun hookProgressTrackDraw(): Int {
-        val type = PROGRESS_BAR_CLASS.from(classLoader) ?: return 0
-        val method = type.findNoArgCanvasMethod("onDraw") ?: return 0
+    private fun hookProgressTrackDraw(symbols: RestoredSkipVideoAdProgressSymbols): Int {
+        val method = symbols.progressOnDraw ?: return 0
         if (!hookedProgressDrawMethods.add(method.toGenericString())) return 0
 
         return runCatching {
@@ -65,60 +70,44 @@ class SkipVideoAdProgressHook(env: RoamingEnv) : BaseRoamingHook(env) {
         )
     }
 
-    private fun hookStorySeekBarLifecycle(): Int {
-        val type = STORY_SEEK_BAR_CLASS.from(classLoader) ?: return 0
+    private fun hookStorySeekBarLifecycle(symbols: RestoredSkipVideoAdProgressSymbols): Int {
         var count = 0
-        type.safeAllMethods("story lifecycle")
-            .filter { method ->
-                method.name == "onStart" &&
-                    method.parameterCount == 1 &&
-                    method.parameterTypes.firstOrNull()?.isNumericType() == true
-            }
-            .distinctBy(Method::toGenericString)
-            .forEach { method ->
-                count += runCatching {
-                    env.hookAfter(method) { param ->
-                        runCatching {
-                            bindStoryView(param.thisObject as? ProgressBar, requestSegments = true)
-                        }.onFailure {
-                            log("SkipVideoAdProgress story bind failed at ${method.name}", it)
-                        }
+        symbols.storyOnStartMethods.forEach { method ->
+            count += runCatching {
+                env.hookAfter(method) { param ->
+                    runCatching {
+                        bindStoryView(param.thisObject as? ProgressBar, requestSegments = true)
+                    }.onFailure {
+                        log("SkipVideoAdProgress story bind failed at ${method.name}", it)
                     }
-                    1
-                }.getOrElse {
-                    log("SkipVideoAdProgress failed to hook ${type.name}.${method.name}", it)
-                    0
                 }
+                1
+            }.getOrElse {
+                log("SkipVideoAdProgress failed to hook ${method.declaringClass.name}.${method.name}", it)
+                0
             }
+        }
 
         return count
     }
 
-    private fun hookInlineProgressUpdates(): Int {
+    private fun hookInlineProgressUpdates(symbols: RestoredSkipVideoAdProgressSymbols): Int {
         var count = 0
-        INLINE_PROGRESS_CLASSES
-            .mapNotNull { it.from(classLoader) }
-            .distinctBy { it.name }
-            .forEach { type ->
-                type.safeAllMethods("inline progress")
-                    .filter { method -> method.name == "updateProgress" && method.parameterCount == 0 }
-                    .distinctBy(Method::toGenericString)
-                    .forEach { method ->
-                        count += runCatching {
-                            env.hookAfter(method) { param ->
-                                runCatching {
-                                    bindInlineProgressView(param.thisObject as? ProgressBar, requestSegments = true)
-                                }.onFailure {
-                                    log("SkipVideoAdProgress inline bind failed at ${type.name}.${method.name}", it)
-                                }
-                            }
-                            1
-                        }.getOrElse {
-                            log("SkipVideoAdProgress failed to hook ${type.name}.${method.name}", it)
-                            0
-                        }
+        symbols.inlineUpdateMethods.forEach { method ->
+            count += runCatching {
+                env.hookAfter(method) { param ->
+                    runCatching {
+                        bindInlineProgressView(param.thisObject as? ProgressBar, requestSegments = true)
+                    }.onFailure {
+                        log("SkipVideoAdProgress inline bind failed at ${method.declaringClass.name}.${method.name}", it)
                     }
+                }
+                1
+            }.getOrElse {
+                log("SkipVideoAdProgress failed to hook ${method.declaringClass.name}.${method.name}", it)
+                0
             }
+        }
         return count
     }
 
@@ -478,8 +467,6 @@ class SkipVideoAdProgressHook(env: RoamingEnv) : BaseRoamingHook(env) {
     }
 
     private companion object {
-        private const val PROGRESS_BAR_CLASS = "android.widget.ProgressBar"
-        private const val PANEL_WIDGET_KT_CLASS = "com.bilibili.inline.panel.PanelWidgetKt"
         private const val PLAYER_CONTAINER_CLASS = "tv.danmaku.biliplayerv2.PlayerContainer"
         private const val PLAYER_SEEK_WIDGET_CLASS = "com.bilibili.playerbizcommonv2.widget.seek.v3.PlayerSeekWidget3"
         private const val STORY_SEEK_BAR_CLASS = "com.bilibili.video.story.view.StorySeekBar"
