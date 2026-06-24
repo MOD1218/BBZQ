@@ -20,8 +20,10 @@ import io.github.bbzq.feats.symbol.dexkit.DexKitBridgeProvider
 import io.github.bbzq.feats.symbol.dexkit.scanMessage
 import org.luckypray.dexkit.DexKitBridge
 import org.luckypray.dexkit.query.FindClass
+import org.luckypray.dexkit.query.FindMethod
 import org.luckypray.dexkit.query.enums.StringMatchType
 import org.luckypray.dexkit.query.matchers.ClassMatcher
+import org.luckypray.dexkit.query.matchers.MethodMatcher
 import java.io.File
 import java.lang.reflect.Field
 import java.lang.reflect.Method
@@ -35,6 +37,7 @@ object BiliSymbolResolver {
 
     private const val HP_ACCOUNT_ACCESS_KEY = "AccessKeyHook.BiliAccounts"
     private const val HP_SETTINGS_FRAGMENT = "SettingHook.PreferenceFragments"
+    private const val HP_BLOCK_UPDATE = "BlockUpdateHook.UpdateCheck"
     private const val HP_MINE_VIP = "MineProfileHook.VipEntrance"
     private const val HP_SPLASH_AD = "SplashAdHook.JsonParsers"
     private const val HP_SHARE = "ShareHook.InstallPoints"
@@ -233,6 +236,9 @@ object BiliSymbolResolver {
         val settings = scanHookPoint(HP_SETTINGS_FRAGMENT, hookPoints, scanErrors, log) {
             scanSettings(classLoader, ::bridge)
         }
+        val blockUpdate = scanHookPoint(HP_BLOCK_UPDATE, hookPoints, scanErrors, log) {
+            scanBlockUpdate(classLoader, ::bridge)
+        }
         val mineProfile = scanHookPoint(HP_MINE_VIP, hookPoints, scanErrors, log) {
             scanMineProfile(classLoader, ::bridge)
         }
@@ -305,6 +311,7 @@ object BiliSymbolResolver {
             teenagersMode = teenagersMode,
             account = account,
             settings = settings,
+            blockUpdate = blockUpdate,
             mineProfile = mineProfile,
             downloadThread = downloadThread,
             homeRecommendAutoRefresh = homeRecommendAutoRefresh,
@@ -671,6 +678,37 @@ object BiliSymbolResolver {
             evidence = "fragments=${methods.size},preference=${preferenceClass.name}",
         )
         return SymbolScanResult.Found(symbols, methods.joinToString("|") { it.declaringClass.name }, symbols.evidence)
+    }
+
+    private fun scanBlockUpdate(
+        classLoader: ClassLoader,
+        bridge: () -> DexKitBridge?,
+    ): SymbolScanResult<BlockUpdateSymbols> {
+        val currentBridge = bridge() ?: return SymbolScanResult.Missing("DexKitBridge unavailable")
+        val methods = runCatching {
+            currentBridge.findMethod(
+                FindMethod.create()
+                    .searchPackages("com.bilibili", "tv.danmaku")
+                    .matcher(
+                        MethodMatcher.create()
+                            .name("check")
+                            .paramTypes(Context::class.java)
+                            .usingStrings("Do sync http request."),
+                    ),
+            )
+        }.getOrElse { throwable ->
+            return SymbolScanResult.Missing("update check method search failed: ${throwable.scanMessage()}")
+        }
+        val methodData = methods.firstOrNull()
+            ?: return SymbolScanResult.Missing("update check method not found")
+        val method = runCatching { methodData.getMethodInstance(classLoader) }
+            .getOrNull()
+            ?: return SymbolScanResult.Missing("update check method restore failed")
+        val symbols = BlockUpdateSymbols(
+            checkMethod = MethodDescriptor.of(method),
+            evidence = "${method.declaringClass.name}.${method.name}",
+        )
+        return SymbolScanResult.Found(symbols, symbols.evidence, symbols.evidence)
     }
 
     private fun scanMineProfile(

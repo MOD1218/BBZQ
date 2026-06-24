@@ -193,6 +193,12 @@ class SettingsContentFactory(
                 ModuleSettings.KEY_BLOCK_TEENAGERS_MODE_DIALOG_ENABLED,
                 false,
             ),
+            createSwitchRow(
+                context.getString(R.string.block_update_title),
+                context.getString(R.string.block_update_summary),
+                ModuleSettings.KEY_BLOCK_UPDATE_ENABLED,
+                false,
+            ),
         )
     }
 
@@ -454,6 +460,12 @@ class SettingsContentFactory(
                 context.getString(R.string.mine_keep_vip_space_title),
                 context.getString(R.string.mine_keep_vip_space_summary),
                 ModuleSettings.KEY_MINE_KEEP_VIP_SPACE,
+                false,
+            ),
+            createSwitchRow(
+                context.getString(R.string.full_number_format_title),
+                context.getString(R.string.full_number_format_summary),
+                ModuleSettings.KEY_FULL_NUMBER_FORMAT_ENABLED,
                 false,
             ),
         )
