@@ -21,6 +21,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.NumberPicker
 import android.widget.ScrollView
+import android.widget.SeekBar
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
@@ -57,6 +58,9 @@ class SettingsContentFactory(
     private lateinit var hideAllHomeComponentsSwitch: Switch
     private lateinit var customHomeComponentHideSwitch: Switch
     private lateinit var storyVideoAdSwitch: Switch
+    private lateinit var storyVideoImmersiveFullscreenSwitch: Switch
+    private lateinit var storyVideoComponentAlphaSummary: TextView
+    private lateinit var storyVideoComponentAlphaSeekBar: SeekBar
     private lateinit var skipVideoAdAutoLikeSwitch: Switch
     private lateinit var blockedCountView: TextView
     private lateinit var symbolScanStatusSummary: TextView
@@ -526,6 +530,21 @@ class SettingsContentFactory(
     private fun storyRows(): List<View> {
         val rows = mutableListOf<View>()
         rows += createSwitchRow(
+            context.getString(R.string.story_video_immersive_fullscreen_title),
+            context.getString(R.string.story_video_immersive_fullscreen_summary),
+            ModuleSettings.KEY_STORY_VIDEO_IMMERSIVE_FULLSCREEN_ENABLED,
+            false,
+        ) {
+            storyVideoImmersiveFullscreenSwitch = it
+        }
+        rows += createSwitchRow(
+            context.getString(R.string.story_video_keep_danmaku_on_comment_title),
+            context.getString(R.string.story_video_keep_danmaku_on_comment_summary),
+            ModuleSettings.KEY_STORY_VIDEO_KEEP_DANMAKU_ON_COMMENT_ENABLED,
+            false,
+        )
+        rows += createStoryVideoComponentAlphaRow()
+        rows += createSwitchRow(
             context.getString(R.string.purify_story_video_ad_title),
             context.getString(R.string.purify_story_video_ad_summary),
             ModuleSettings.KEY_PURIFY_STORY_VIDEO_AD_ENABLED,
@@ -964,6 +983,46 @@ class SettingsContentFactory(
         }
     }
 
+    private fun createStoryVideoComponentAlphaRow(): View {
+        storyVideoComponentAlphaSummary = TextView(context).apply {
+            textSize = 12f
+            setTextColor(SUMMARY_COLOR)
+        }
+        storyVideoComponentAlphaSeekBar = SeekBar(context).apply {
+            max = 100
+            progress = ModuleSettings.getStoryVideoComponentAlphaPercent(prefs)
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                    if (!refreshing) {
+                        storyVideoComponentAlphaSummary.text = storyVideoComponentAlphaSummary(progress)
+                    }
+                    if (fromUser) {
+                        prefs.edit()
+                            .putInt(ModuleSettings.KEY_STORY_VIDEO_COMPONENT_ALPHA, progress.coerceIn(0, 100))
+                            .apply()
+                    }
+                }
+
+                override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
+
+                override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
+            })
+        }
+        return LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            addView(TextView(context).apply {
+                text = context.getString(R.string.story_video_component_alpha_title)
+                textSize = 15f
+                setTextColor(TITLE_COLOR)
+            })
+            addView(storyVideoComponentAlphaSummary.apply {
+                setPadding(0, dp(4), 0, dp(8))
+            })
+            addView(storyVideoComponentAlphaSeekBar)
+        }
+    }
+
     private fun createTagGroup(): View {
         return LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -1337,6 +1396,15 @@ class SettingsContentFactory(
         if (::storyVideoAdSwitch.isInitialized) {
             storyVideoAdSwitch.isChecked = storyEnabled
         }
+        if (::storyVideoImmersiveFullscreenSwitch.isInitialized) {
+            storyVideoImmersiveFullscreenSwitch.isChecked =
+                ModuleSettings.isStoryVideoImmersiveFullscreenEnabled(prefs)
+        }
+        if (::storyVideoComponentAlphaSeekBar.isInitialized) {
+            val alphaPercent = ModuleSettings.getStoryVideoComponentAlphaPercent(prefs)
+            storyVideoComponentAlphaSeekBar.progress = alphaPercent
+            storyVideoComponentAlphaSummary.text = storyVideoComponentAlphaSummary(alphaPercent)
+        }
         if (::skipVideoAdAutoLikeSwitch.isInitialized) {
             skipVideoAdAutoLikeSwitch.isChecked = skipVideoAdAutoLikeEnabled
         }
@@ -1414,6 +1482,9 @@ class SettingsContentFactory(
 
     private fun hiddenHomeComponentClassNames(): Set<String> =
         homeComponentCheckBoxes.filterValues { !it.isChecked }.keys.toSet()
+
+    private fun storyVideoComponentAlphaSummary(percent: Int): String =
+        context.getString(R.string.story_video_component_alpha_summary, percent.coerceIn(0, 100))
 
     private fun homeRecommendTitleKeywordSummary(): String {
         val keywords = ModuleSettings.parseHomeRecommendTitleKeywords(

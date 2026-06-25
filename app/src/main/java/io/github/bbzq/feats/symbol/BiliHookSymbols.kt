@@ -27,6 +27,9 @@ data class BiliHookSymbols(
     val downloadThread: DownloadThreadSymbols? = null,
     val homeRecommendAutoRefresh: HomeRecommendAutoRefreshSymbols? = null,
     val storyPlayerAd: StoryPlayerAdSymbols? = null,
+    val storyFullscreen: StoryFullscreenSymbols? = null,
+    val storyDanmaku: StoryDanmakuSymbols? = null,
+    val storyComponentAlpha: StoryComponentAlphaSymbols? = null,
     val videoDetailBannerAd: VideoDetailBannerAdSymbols? = null,
     val commentPicture: CommentPictureSymbols? = null,
     val homeTopBar: HomeTopBarSymbols? = null,
@@ -64,6 +67,9 @@ data class BiliHookSymbols(
         .putOpt("downloadThread", downloadThread?.toJson())
         .putOpt("homeRecommendAutoRefresh", homeRecommendAutoRefresh?.toJson())
         .putOpt("storyPlayerAd", storyPlayerAd?.toJson())
+        .putOpt("storyFullscreen", storyFullscreen?.toJson())
+        .putOpt("storyDanmaku", storyDanmaku?.toJson())
+        .putOpt("storyComponentAlpha", storyComponentAlpha?.toJson())
         .putOpt("videoDetailBannerAd", videoDetailBannerAd?.toJson())
         .putOpt("commentPicture", commentPicture?.toJson())
         .putOpt("homeTopBar", homeTopBar?.toJson())
@@ -79,7 +85,7 @@ data class BiliHookSymbols(
         .putOpt("fullNumberFormat", fullNumberFormat?.toJson())
 
     companion object {
-        const val CACHE_SCHEMA_VERSION = 7
+        const val CACHE_SCHEMA_VERSION = 13
 
         fun fromJson(raw: String?): BiliHookSymbols? {
             if (raw.isNullOrBlank()) return null
@@ -104,6 +110,10 @@ data class BiliHookSymbols(
                     homeRecommendAutoRefresh = obj.optJSONObject("homeRecommendAutoRefresh")
                         ?.let(HomeRecommendAutoRefreshSymbols::fromJson),
                     storyPlayerAd = obj.optJSONObject("storyPlayerAd")?.let(StoryPlayerAdSymbols::fromJson),
+                    storyFullscreen = obj.optJSONObject("storyFullscreen")?.let(StoryFullscreenSymbols::fromJson),
+                    storyDanmaku = obj.optJSONObject("storyDanmaku")?.let(StoryDanmakuSymbols::fromJson),
+                    storyComponentAlpha = obj.optJSONObject("storyComponentAlpha")
+                        ?.let(StoryComponentAlphaSymbols::fromJson),
                     videoDetailBannerAd = obj.optJSONObject("videoDetailBannerAd")
                         ?.let(VideoDetailBannerAdSymbols::fromJson),
                     commentPicture = obj.optJSONObject("commentPicture")?.let(CommentPictureSymbols::fromJson),
@@ -127,7 +137,7 @@ data class BiliHookSymbols(
 }
 
 object DexKitRuleVersions {
-    const val CURRENT = 18
+    const val CURRENT = 29
 }
 
 data class HookPointStatus(
@@ -789,6 +799,151 @@ data class RestoredStoryPlayerAdSymbols(
     val pagerListMethods: List<Method>,
     val rerankInvokeSuspend: Method?,
     val kotlinUnit: Any?,
+)
+
+data class StoryFullscreenSymbols(
+    val onCreate: MethodDescriptor,
+    val onWindowFocusChanged: MethodDescriptor,
+    val onResume: MethodDescriptor?,
+    val evidence: String,
+) {
+    fun toJson(): JSONObject = JSONObject()
+        .put("onCreate", onCreate.toJson())
+        .put("onWindowFocusChanged", onWindowFocusChanged.toJson())
+        .putOpt("onResume", onResume?.toJson())
+        .put("evidence", evidence)
+
+    fun restore(classLoader: ClassLoader): RestoredStoryFullscreenSymbols? {
+        val create = onCreate.restoreOptional(classLoader) ?: return null
+        val focus = onWindowFocusChanged.restoreOptional(classLoader) ?: return null
+        val resume = onResume.restoreOptional(classLoader)
+        if (onResume != null && resume == null) return null
+        return RestoredStoryFullscreenSymbols(
+            onCreate = create,
+            onWindowFocusChanged = focus,
+            onResume = resume,
+        )
+    }
+
+    companion object {
+        fun fromJson(obj: JSONObject): StoryFullscreenSymbols = StoryFullscreenSymbols(
+            onCreate = MethodDescriptor.fromJson(obj.getJSONObject("onCreate")),
+            onWindowFocusChanged = MethodDescriptor.fromJson(obj.getJSONObject("onWindowFocusChanged")),
+            onResume = obj.optJSONObject("onResume")?.let(MethodDescriptor::fromJson),
+            evidence = obj.optString("evidence", "-"),
+        )
+    }
+}
+
+data class RestoredStoryFullscreenSymbols(
+    val onCreate: Method,
+    val onWindowFocusChanged: Method,
+    val onResume: Method?,
+)
+
+data class StoryDanmakuSymbols(
+    val commentShowMethods: List<MethodDescriptor>,
+    val commentHideMethods: List<MethodDescriptor>,
+    val introCommentShowMethod: MethodDescriptor?,
+    val introCommentDismissMethod: MethodDescriptor?,
+    val setDanmakuOpacity: MethodDescriptor,
+    val updateCanvas: MethodDescriptor,
+    val evidence: String,
+) {
+    fun toJson(): JSONObject = JSONObject()
+        .put("commentShowMethods", commentShowMethods.toJsonArray { it.toJson() })
+        .put("commentHideMethods", commentHideMethods.toJsonArray { it.toJson() })
+        .putOpt("introCommentShowMethod", introCommentShowMethod?.toJson())
+        .putOpt("introCommentDismissMethod", introCommentDismissMethod?.toJson())
+        .put("setDanmakuOpacity", setDanmakuOpacity.toJson())
+        .put("updateCanvas", updateCanvas.toJson())
+        .put("evidence", evidence)
+
+    fun restore(classLoader: ClassLoader): RestoredStoryDanmakuSymbols? {
+        val showMethods = commentShowMethods.mapNotNull { it.restoreOptional(classLoader) }
+        if (showMethods.size != commentShowMethods.size) return null
+        val hideMethods = commentHideMethods.mapNotNull { it.restoreOptional(classLoader) }
+        if (hideMethods.size != commentHideMethods.size) return null
+        val introShowMethod = introCommentShowMethod.restoreOptional(classLoader)
+        if (introCommentShowMethod != null && introShowMethod == null) return null
+        val introDismissMethod = introCommentDismissMethod.restoreOptional(classLoader)
+        if (introCommentDismissMethod != null && introDismissMethod == null) return null
+        val setOpacity = setDanmakuOpacity.restoreOptional(classLoader) ?: return null
+        val canvas = updateCanvas.restoreOptional(classLoader) ?: return null
+        return RestoredStoryDanmakuSymbols(
+            commentShowMethods = showMethods,
+            commentHideMethods = hideMethods,
+            introCommentShowMethod = introShowMethod,
+            introCommentDismissMethod = introDismissMethod,
+            setDanmakuOpacity = setOpacity,
+            updateCanvas = canvas,
+        )
+    }
+
+    companion object {
+        fun fromJson(obj: JSONObject): StoryDanmakuSymbols = StoryDanmakuSymbols(
+            commentShowMethods = obj.optJSONArray("commentShowMethods").toList { MethodDescriptor.fromJson(it) },
+            commentHideMethods = obj.optJSONArray("commentHideMethods").toList { MethodDescriptor.fromJson(it) },
+            introCommentShowMethod = obj.optJSONObject("introCommentShowMethod")?.let(MethodDescriptor::fromJson),
+            introCommentDismissMethod = obj.optJSONObject("introCommentDismissMethod")
+                ?.let(MethodDescriptor::fromJson),
+            setDanmakuOpacity = MethodDescriptor.fromJson(obj.getJSONObject("setDanmakuOpacity")),
+            updateCanvas = MethodDescriptor.fromJson(obj.getJSONObject("updateCanvas")),
+            evidence = obj.optString("evidence", "-"),
+        )
+    }
+}
+
+data class RestoredStoryDanmakuSymbols(
+    val commentShowMethods: List<Method>,
+    val commentHideMethods: List<Method>,
+    val introCommentShowMethod: Method?,
+    val introCommentDismissMethod: Method?,
+    val setDanmakuOpacity: Method,
+    val updateCanvas: Method,
+)
+
+data class StoryComponentAlphaSymbols(
+    val infoConstructors: List<ConstructorDescriptor>,
+    val rightConstructors: List<ConstructorDescriptor>,
+    val fragmentOnCreateView: MethodDescriptor,
+    val evidence: String,
+) {
+    fun toJson(): JSONObject = JSONObject()
+        .put("infoConstructors", infoConstructors.toJsonArray { it.toJson() })
+        .put("rightConstructors", rightConstructors.toJsonArray { it.toJson() })
+        .put("fragmentOnCreateView", fragmentOnCreateView.toJson())
+        .put("evidence", evidence)
+
+    fun restore(classLoader: ClassLoader): RestoredStoryComponentAlphaSymbols? {
+        val infoType = classLoader.loadClassOrNull(STORY_INFO_MODULE) ?: return null
+        val rightType = classLoader.loadClassOrNull(STORY_RIGHT_MODULE) ?: return null
+        return RestoredStoryComponentAlphaSymbols(
+            infoConstructors = infoConstructors.mapNotNull { it.restore(infoType) }
+                .takeIf { it.size == infoConstructors.size } ?: return null,
+            rightConstructors = rightConstructors.mapNotNull { it.restore(rightType) }
+                .takeIf { it.size == rightConstructors.size } ?: return null,
+            fragmentOnCreateView = fragmentOnCreateView.restoreOptional(classLoader) ?: return null,
+        )
+    }
+
+    companion object {
+        fun fromJson(obj: JSONObject): StoryComponentAlphaSymbols = StoryComponentAlphaSymbols(
+            infoConstructors = obj.optJSONArray("infoConstructors").toList { ConstructorDescriptor.fromJson(it) },
+            rightConstructors = obj.optJSONArray("rightConstructors").toList { ConstructorDescriptor.fromJson(it) },
+            fragmentOnCreateView = MethodDescriptor.fromJson(obj.getJSONObject("fragmentOnCreateView")),
+            evidence = obj.optString("evidence", "-"),
+        )
+
+        private const val STORY_INFO_MODULE = "com.bilibili.video.story.module.StoryInfoModule"
+        private const val STORY_RIGHT_MODULE = "com.bilibili.video.story.module.StoryRightModule"
+    }
+}
+
+data class RestoredStoryComponentAlphaSymbols(
+    val infoConstructors: List<Constructor<*>>,
+    val rightConstructors: List<Constructor<*>>,
+    val fragmentOnCreateView: Method,
 )
 
 data class VideoDetailBannerAdSymbols(

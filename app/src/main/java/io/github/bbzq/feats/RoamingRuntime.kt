@@ -23,6 +23,9 @@ import io.github.bbzq.feats.hook.ShareHook
 import io.github.bbzq.feats.hook.SkipVideoAdHook
 import io.github.bbzq.feats.hook.SkipVideoAdProgressHook
 import io.github.bbzq.feats.hook.SplashAdHook
+import io.github.bbzq.feats.hook.StoryComponentAlphaHook
+import io.github.bbzq.feats.hook.StoryDanmakuHook
+import io.github.bbzq.feats.hook.StoryFullscreenHook
 import io.github.bbzq.feats.hook.StoryPlayerAdHook
 import io.github.bbzq.feats.hook.BlockUpdateHook
 import io.github.bbzq.feats.hook.VideoCommentHook
@@ -100,6 +103,9 @@ object RoamingRuntime {
                 ::HomeRecommendAutoRefreshHook,
                 ::HomeTopBarPurifyHook,
                 ::StoryPlayerAdHook,
+                ::StoryFullscreenHook,
+                ::StoryDanmakuHook,
+                ::StoryComponentAlphaHook,
                 ::VideoDetailBannerAdHook,
                 ::TryFreeQualityHook,
                 ::ChronosPromotionHook,

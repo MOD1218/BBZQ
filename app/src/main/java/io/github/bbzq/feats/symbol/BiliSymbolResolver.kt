@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.graphics.Canvas
 import android.os.Bundle
+import android.util.AttributeSet
 import android.view.LayoutInflater
 import android.view.Menu
 import android.view.MenuInflater
@@ -58,6 +59,21 @@ object BiliSymbolResolver {
     private const val HP_DOWNLOAD_THREAD_REPORT = "DownloadThreadHook.ReportMethod"
     private const val HP_HOME_RECOMMEND_AUTO_REFRESH = "HomeRecommendAutoRefreshHook.AutoRefresh"
     private const val HP_STORY_PLAYER_AD = "StoryPlayerAdHook.InstallPoints"
+    private const val HP_STORY_FULLSCREEN = "StoryFullscreenHook.StoryVideoActivity"
+    private const val HP_STORY_FULLSCREEN_ON_CREATE = "StoryFullscreenHook.OnCreate"
+    private const val HP_STORY_FULLSCREEN_FOCUS = "StoryFullscreenHook.OnWindowFocusChanged"
+    private const val HP_STORY_FULLSCREEN_ON_RESUME = "StoryFullscreenHook.OnResume"
+    private const val HP_STORY_DANMAKU = "StoryDanmakuHook.InstallPoints"
+    private const val HP_STORY_DANMAKU_COMMENT_SHOW = "StoryDanmakuHook.CommentShow"
+    private const val HP_STORY_DANMAKU_COMMENT_HIDE = "StoryDanmakuHook.CommentHide"
+    private const val HP_STORY_DANMAKU_INTRO_COMMENT_SHOW = "StoryDanmakuHook.IntroCommentShow"
+    private const val HP_STORY_DANMAKU_INTRO_COMMENT_DISMISS = "StoryDanmakuHook.IntroCommentDismiss"
+    private const val HP_STORY_DANMAKU_SET_OPACITY = "StoryDanmakuHook.SetDanmakuOpacity"
+    private const val HP_STORY_DANMAKU_UPDATE_CANVAS = "StoryDanmakuHook.UpdateCanvas"
+    private const val HP_STORY_COMPONENT_ALPHA = "StoryComponentAlphaHook.InstallPoints"
+    private const val HP_STORY_COMPONENT_ALPHA_INFO = "StoryComponentAlphaHook.InfoModule"
+    private const val HP_STORY_COMPONENT_ALPHA_RIGHT = "StoryComponentAlphaHook.RightModule"
+    private const val HP_STORY_COMPONENT_ALPHA_TOP = "StoryComponentAlphaHook.TopControls"
     private const val HP_VIDEO_DETAIL_BANNER_AD = "VideoDetailBannerAdHook.InstallPoints"
     private const val HP_VIDEO_DETAIL_BANNER_PROXY = "VideoDetailBannerAdHook.Proxy"
     private const val HP_VIDEO_DETAIL_BANNER_RELATE_GAME = "VideoDetailBannerAdHook.RelateGame"
@@ -263,6 +279,15 @@ object BiliSymbolResolver {
         val storyPlayerAd = scanHookPoint(HP_STORY_PLAYER_AD, hookPoints, scanErrors, log) {
             scanStoryPlayerAd(classLoader)
         }
+        val storyFullscreen = scanHookPoint(HP_STORY_FULLSCREEN, hookPoints, scanErrors, log) {
+            scanStoryFullscreen(classLoader)
+        }
+        val storyDanmaku = scanHookPoint(HP_STORY_DANMAKU, hookPoints, scanErrors, log) {
+            scanStoryDanmaku(classLoader)
+        }
+        val storyComponentAlpha = scanHookPoint(HP_STORY_COMPONENT_ALPHA, hookPoints, scanErrors, log) {
+            scanStoryComponentAlpha(classLoader)
+        }
         val videoDetailBannerAd = scanHookPoint(HP_VIDEO_DETAIL_BANNER_AD, hookPoints, scanErrors, log) {
             scanVideoDetailBannerAd(classLoader)
         }
@@ -322,6 +347,9 @@ object BiliSymbolResolver {
             downloadThread = downloadThread,
             homeRecommendAutoRefresh = homeRecommendAutoRefresh,
             storyPlayerAd = storyPlayerAd,
+            storyFullscreen = storyFullscreen,
+            storyDanmaku = storyDanmaku,
+            storyComponentAlpha = storyComponentAlpha,
             videoDetailBannerAd = videoDetailBannerAd,
             commentPicture = commentPicture,
             homeTopBar = homeTopBar,
@@ -1079,6 +1107,233 @@ object BiliSymbolResolver {
         return SymbolScanResult.Found(symbols, "StoryPlayerAd", symbols.evidence, hookPoints)
     }
 
+    private fun scanStoryFullscreen(
+        classLoader: ClassLoader,
+    ): SymbolScanResult<StoryFullscreenSymbols> {
+        val storyActivity = classLoader.loadClassOrNull(STORY_VIDEO_ACTIVITY)
+            ?: return SymbolScanResult.Missing("story video activity class not found")
+        val onCreate = storyActivity.findMethod("onCreate", Void.TYPE, Bundle::class.java)
+            ?.apply { isAccessible = true }
+        val onWindowFocusChanged = storyActivity.findMethod(
+            "onWindowFocusChanged",
+            Void.TYPE,
+            Boolean::class.javaPrimitiveType!!,
+        )?.takeIf { it.declaringClass.name == STORY_VIDEO_ACTIVITY }
+            ?.apply { isAccessible = true }
+        val onResume = storyActivity.findMethod("onResume", Void.TYPE)
+            ?.takeIf { it.declaringClass.name == STORY_VIDEO_ACTIVITY }
+            ?.apply { isAccessible = true }
+
+        if (onCreate == null || onWindowFocusChanged == null) {
+            return SymbolScanResult.Missing(
+                "story fullscreen lifecycle methods not found: " +
+                    "onCreate=${onCreate != null},focus=${onWindowFocusChanged != null}",
+            )
+        }
+
+        val symbols = StoryFullscreenSymbols(
+            onCreate = MethodDescriptor.of(onCreate),
+            onWindowFocusChanged = MethodDescriptor.of(onWindowFocusChanged),
+            onResume = onResume?.let(MethodDescriptor::of),
+            evidence = "onCreate=${onCreate.declaringClass.name},focus=${onWindowFocusChanged.declaringClass.name},onResume=${onResume != null}",
+        )
+        val hookPoints = listOf(
+            childHookPoint(HP_STORY_FULLSCREEN_ON_CREATE, true, "onCreate not found", "method=${onCreate.name}"),
+            childHookPoint(HP_STORY_FULLSCREEN_FOCUS, true, "onWindowFocusChanged not found", "method=${onWindowFocusChanged.name}"),
+            optionalChildHookPoint(HP_STORY_FULLSCREEN_ON_RESUME, onResume != null, "onResume not declared by StoryVideoActivity", "method=${onResume?.name}"),
+        )
+        return SymbolScanResult.Found(
+            symbols,
+            STORY_VIDEO_ACTIVITY,
+            symbols.evidence,
+            hookPoints,
+        )
+    }
+
+    private fun scanStoryDanmaku(
+        classLoader: ClassLoader,
+    ): SymbolScanResult<StoryDanmakuSymbols> {
+        val storyDetail = classLoader.loadClassOrNull(STORY_DETAIL)
+            ?: return SymbolScanResult.Missing("story detail class not found")
+        val storyPagerPlayer = classLoader.loadClassOrNull(STORY_PAGER_PLAYER)
+            ?: return SymbolScanResult.Missing("story pager player class not found")
+        val commentContainerInterface = classLoader.loadClassOrNull(STORY_COMMENT_CONTAINER_INTERFACE)
+            ?: return SymbolScanResult.Missing("story comment container interface not found")
+        val commentCallback = classLoader.loadClassOrNull(STORY_COMMENT_CALLBACK)
+            ?: return SymbolScanResult.Missing("story comment callback class not found")
+        val commentOffsetCallback = classLoader.loadClassOrNull(STORY_COMMENT_OFFSET_CALLBACK)
+            ?: return SymbolScanResult.Missing("story comment offset callback class not found")
+        val commentPlayerCallback = classLoader.loadClassOrNull(STORY_COMMENT_PLAYER_CALLBACK)
+            ?: return SymbolScanResult.Missing("story comment player callback class not found")
+        val verticalContainer = classLoader.loadClassOrNull(STORY_COMMENT_VERTICAL_CONTAINER)
+            ?: return SymbolScanResult.Missing("story vertical comment container class not found")
+        val landscapeContainer = classLoader.loadClassOrNull(STORY_COMMENT_LANDSCAPE_CONTAINER)
+        val interactLayerService = classLoader.loadClassOrNull(INTERACT_LAYER_SERVICE)
+            ?: return SymbolScanResult.Missing("interact layer service class not found")
+        val introCommentService = classLoader.loadClassOrNull(STORY_INTRO_COMMENT_SERVICE)
+        val storyTabConfig = classLoader.loadClassOrNull(STORY_TAB_CONFIG)
+
+        val showSignature = commentContainerInterface.allMethods().firstOrNull { method ->
+            method.name == "a" &&
+                method.returnType == Void.TYPE &&
+                method.parameterCount == 8 &&
+                method.parameterTypes[0] == storyDetail &&
+                method.parameterTypes[2] == Long::class.javaPrimitiveType &&
+                method.parameterTypes[3] == Long::class.javaPrimitiveType &&
+                method.parameterTypes[4] == String::class.java &&
+                method.parameterTypes[5] == commentCallback &&
+                method.parameterTypes[6] == commentOffsetCallback &&
+                method.parameterTypes[7] == commentPlayerCallback
+        }?.parameterTypes ?: return SymbolScanResult.Missing("story comment show signature not found")
+        val showMethods = buildList {
+            verticalContainer.findMethod("a", Void.TYPE, *showSignature)
+                ?.apply { isAccessible = true }
+                ?.let(::add)
+            landscapeContainer?.findMethod("a", Void.TYPE, *showSignature)
+                ?.apply { isAccessible = true }
+                ?.let(::add)
+        }
+        val hideMethods = buildList {
+            verticalContainer.findMethod("c", Void.TYPE)
+                ?.apply { isAccessible = true }
+                ?.let(::add)
+            landscapeContainer?.findMethod("c", Void.TYPE)
+                ?.apply { isAccessible = true }
+                ?.let(::add)
+        }
+        val introCommentShow = if (introCommentService != null && storyTabConfig != null) {
+            introCommentService.findMethod("b", Void.TYPE, storyTabConfig)
+                ?.apply { isAccessible = true }
+        } else {
+            null
+        }
+        val introCommentDismiss = introCommentService?.findMethod("a", Void.TYPE)
+            ?.apply { isAccessible = true }
+        val setDanmakuOpacity = interactLayerService.findMethod(
+            "setDanmakuOpacity",
+            Void.TYPE,
+            Float::class.javaPrimitiveType!!,
+            Boolean::class.javaPrimitiveType!!,
+        )?.apply { isAccessible = true }
+        val updateCanvasCandidates = storyPagerPlayer.allMethods().filter { method ->
+            method.returnType == Void.TYPE &&
+                method.declaringClass.name == STORY_PAGER_PLAYER &&
+                method.parameterTypes.map { it.name } == listOf("int", "int", "int")
+        }.toList()
+        val updateCanvas = updateCanvasCandidates.singleOrNull()?.apply { isAccessible = true }
+
+        if (showMethods.isEmpty() || hideMethods.isEmpty() || setDanmakuOpacity == null || updateCanvas == null) {
+            return SymbolScanResult.Missing(
+                "story danmaku hook points not found: " +
+                    "show=${showMethods.size},hide=${hideMethods.size}," +
+                    "setOpacity=${setDanmakuOpacity != null},updateCanvas=${updateCanvas != null}",
+            )
+        }
+
+        val symbols = StoryDanmakuSymbols(
+            commentShowMethods = showMethods.map(MethodDescriptor::of),
+            commentHideMethods = hideMethods.map(MethodDescriptor::of),
+            introCommentShowMethod = introCommentShow?.let(MethodDescriptor::of),
+            introCommentDismissMethod = introCommentDismiss?.let(MethodDescriptor::of),
+            setDanmakuOpacity = MethodDescriptor.of(setDanmakuOpacity),
+            updateCanvas = MethodDescriptor.of(updateCanvas),
+            evidence = "show=${showMethods.size},hide=${hideMethods.size}," +
+                "introShow=${introCommentShow != null},introDismiss=${introCommentDismiss != null}," +
+                "setOpacity=true,updateCanvas=true",
+        )
+        val hookPoints = listOf(
+            childHookPoint(HP_STORY_DANMAKU_COMMENT_SHOW, showMethods.isNotEmpty(), "comment show method not found", "methods=${showMethods.size}"),
+            childHookPoint(HP_STORY_DANMAKU_COMMENT_HIDE, hideMethods.isNotEmpty(), "comment hide method not found", "methods=${hideMethods.size}"),
+            optionalChildHookPoint(
+                HP_STORY_DANMAKU_INTRO_COMMENT_SHOW,
+                introCommentShow != null,
+                "intro comment show method not found",
+                "method=${introCommentShow?.name}",
+            ),
+            optionalChildHookPoint(
+                HP_STORY_DANMAKU_INTRO_COMMENT_DISMISS,
+                introCommentDismiss != null,
+                "intro comment dismiss method not found",
+                "method=${introCommentDismiss?.name}",
+            ),
+            childHookPoint(HP_STORY_DANMAKU_SET_OPACITY, true, "setDanmakuOpacity method not found", "method=${setDanmakuOpacity.name}"),
+            childHookPoint(
+                HP_STORY_DANMAKU_UPDATE_CANVAS,
+                true,
+                "story updateCanvas method not unique: candidates=${updateCanvasCandidates.size}",
+                "method=${updateCanvas.name}",
+            ),
+        )
+        return SymbolScanResult.Found(
+            symbols,
+            "StoryDanmaku",
+            symbols.evidence,
+            hookPoints,
+        )
+    }
+
+    private fun scanStoryComponentAlpha(
+        classLoader: ClassLoader,
+    ): SymbolScanResult<StoryComponentAlphaSymbols> {
+        val infoModule = classLoader.loadClassOrNull(STORY_INFO_MODULE)
+            ?: return SymbolScanResult.Missing("story info module class not found")
+        val rightModule = classLoader.loadClassOrNull(STORY_RIGHT_MODULE)
+            ?: return SymbolScanResult.Missing("story right module class not found")
+        val storyFragment = classLoader.loadClassOrNull(STORY_VIDEO_FRAGMENT)
+            ?: return SymbolScanResult.Missing("story video fragment class not found")
+
+        val infoConstructors = infoModule.storyModuleConstructors()
+        val rightConstructors = rightModule.storyModuleConstructors()
+        val onCreateView = storyFragment.findMethod(
+            "onCreateView",
+            View::class.java,
+            LayoutInflater::class.java,
+            ViewGroup::class.java,
+            Bundle::class.java,
+        )?.takeIf { it.declaringClass.name == STORY_VIDEO_FRAGMENT }
+            ?.apply { isAccessible = true }
+
+        if (infoConstructors.isEmpty() || rightConstructors.isEmpty() || onCreateView == null) {
+            return SymbolScanResult.Missing(
+                "story component alpha hook points not found: " +
+                    "info=${infoConstructors.size},right=${rightConstructors.size},top=${onCreateView != null}",
+            )
+        }
+
+        val symbols = StoryComponentAlphaSymbols(
+            infoConstructors = infoConstructors.map(ConstructorDescriptor::of),
+            rightConstructors = rightConstructors.map(ConstructorDescriptor::of),
+            fragmentOnCreateView = MethodDescriptor.of(onCreateView),
+            evidence = "info=${infoConstructors.size},right=${rightConstructors.size},top=${onCreateView.name}",
+        )
+        val hookPoints = listOf(
+            childHookPoint(
+                HP_STORY_COMPONENT_ALPHA_INFO,
+                infoConstructors.isNotEmpty(),
+                "story info constructors not found",
+                "constructors=${infoConstructors.size}",
+            ),
+            childHookPoint(
+                HP_STORY_COMPONENT_ALPHA_RIGHT,
+                rightConstructors.isNotEmpty(),
+                "story right constructors not found",
+                "constructors=${rightConstructors.size}",
+            ),
+            childHookPoint(
+                HP_STORY_COMPONENT_ALPHA_TOP,
+                true,
+                "story fragment onCreateView not found",
+                "method=${onCreateView.name}",
+            ),
+        )
+        return SymbolScanResult.Found(
+            symbols,
+            "StoryComponentAlpha",
+            symbols.evidence,
+            hookPoints,
+        )
+    }
+
     private fun isStoryPagerListMethod(method: Method): Boolean =
         method.returnType == Void.TYPE &&
             method.declaringClass.name == STORY_PAGER_PLAYER &&
@@ -1094,6 +1349,17 @@ object BiliSymbolResolver {
         val parameterType = method.genericParameterTypes.firstOrNull()?.typeName ?: return true
         return parameterType == List::class.java.name || parameterType.contains(STORY_DETAIL)
     }
+
+    private fun Class<*>.storyModuleConstructors() =
+        declaredConstructors
+            .filter { constructor ->
+                constructor.parameterTypes.let { params ->
+                    params.size in 1..2 &&
+                        params[0] == Context::class.java &&
+                        (params.size == 1 || params[1] == AttributeSet::class.java)
+                }
+            }
+            .onEach { it.isAccessible = true }
 
     private fun scanVideoDetailBannerAd(
         classLoader: ClassLoader,
@@ -2655,10 +2921,24 @@ object BiliSymbolResolver {
     private const val HOME_PEGASUS_REQUEST_MANAGER = "com.bilibili.pegasus.request.b"
     private const val HOME_PEGASUS_FLUSH = "com.bilibili.pegasus.data.request.PegasusFlush"
     private const val HOME_RESOURCE = "com.bilibili.lib.arch.lifecycle.Resource"
+    private const val STORY_VIDEO_ACTIVITY = "com.bilibili.video.story.StoryVideoActivity"
+    private const val STORY_VIDEO_FRAGMENT = "com.bilibili.video.story.StoryVideoFragment"
     private const val STORY_PAGER_PLAYER = "com.bilibili.video.story.player.StoryPagerPlayer"
     private const val STORY_FEED_RESPONSE = "com.bilibili.video.story.api.StoryFeedResponse"
     private const val STORY_AD_RERANK_TASK = "com.bilibili.video.story.action.service.StoryAdReRankService\$2"
+    private const val STORY_INFO_MODULE = "com.bilibili.video.story.module.StoryInfoModule"
+    private const val STORY_RIGHT_MODULE = "com.bilibili.video.story.module.StoryRightModule"
     private const val STORY_DETAIL = "com.bilibili.video.story.StoryDetail"
+    private const val STORY_COMMENT_CONTAINER_INTERFACE = "com.bilibili.video.story.action.StoryCommentHelper\$b"
+    private const val STORY_COMMENT_VERTICAL_CONTAINER =
+        "com.bilibili.video.story.action.StoryCommentHelper\$VerticalContainerV2"
+    private const val STORY_COMMENT_LANDSCAPE_CONTAINER =
+        "com.bilibili.video.story.action.StoryCommentHelper\$d"
+    private const val STORY_COMMENT_CALLBACK = "com.bilibili.video.story.action.StoryCommentHelper\$c"
+    private const val STORY_COMMENT_OFFSET_CALLBACK = "com.bilibili.video.story.action.StoryCommentHelper\$e"
+    private const val STORY_COMMENT_PLAYER_CALLBACK = "com.bilibili.video.story.action.StoryCommentHelper\$a"
+    private const val STORY_INTRO_COMMENT_SERVICE = "com.bilibili.video.story.action.widget.comment.p"
+    private const val STORY_TAB_CONFIG = "com.bilibili.video.story.tab.W0"
     private const val KOTLIN_UNIT = "kotlin.Unit"
     private const val G_AD_BIZ_KT = "com.bilibili.gripper.api.ad.biz.GAdBizKt"
     private const val G_AD_VIDEO_DETAIL = "com.bilibili.gripper.api.ad.biz.GAdVideoDetail"

@@ -38,6 +38,9 @@ object ModuleSettings {
     const val KEY_HIDDEN_HOME_COMPONENTS = "hidden_home_components"
     const val KEY_KNOWN_HOME_COMPONENTS = "known_home_components"
     const val KEY_PURIFY_STORY_VIDEO_AD_ENABLED = "purify_story_video_ad_enabled"
+    const val KEY_STORY_VIDEO_IMMERSIVE_FULLSCREEN_ENABLED = "story_video_immersive_fullscreen_enabled"
+    const val KEY_STORY_VIDEO_KEEP_DANMAKU_ON_COMMENT_ENABLED = "story_video_keep_danmaku_on_comment_enabled"
+    const val KEY_STORY_VIDEO_COMPONENT_ALPHA = "story_video_component_alpha"
     const val KEY_PURIFY_STORY_VIDEO_AD_TAGS = "purify_story_video_ad_tags"
     const val KEY_PURIFY_STORY_VIDEO_AD_BLOCKED_COUNT = "purify_story_video_ad_blocked_count"
     const val KEY_CUSTOM_DOWNLOAD_THREAD_ENABLED = "custom_download_thread_enabled"
@@ -192,6 +195,12 @@ object ModuleSettings {
         ExportableConfigSpec(KEY_HIDE_ALL_HOME_COMPONENTS_ENABLED, ExportableValueType.BOOLEAN) { it.getBoolean(KEY_HIDE_ALL_HOME_COMPONENTS_ENABLED, false) },
         ExportableConfigSpec(KEY_CUSTOM_HOME_COMPONENT_HIDE_ENABLED, ExportableValueType.BOOLEAN) { it.getBoolean(KEY_CUSTOM_HOME_COMPONENT_HIDE_ENABLED, false) },
         ExportableConfigSpec(KEY_PURIFY_STORY_VIDEO_AD_ENABLED, ExportableValueType.BOOLEAN) { it.getBoolean(KEY_PURIFY_STORY_VIDEO_AD_ENABLED, false) },
+        ExportableConfigSpec(KEY_STORY_VIDEO_IMMERSIVE_FULLSCREEN_ENABLED, ExportableValueType.BOOLEAN) {
+            it.getBoolean(KEY_STORY_VIDEO_IMMERSIVE_FULLSCREEN_ENABLED, false)
+        },
+        ExportableConfigSpec(KEY_STORY_VIDEO_KEEP_DANMAKU_ON_COMMENT_ENABLED, ExportableValueType.BOOLEAN) {
+            it.getBoolean(KEY_STORY_VIDEO_KEEP_DANMAKU_ON_COMMENT_ENABLED, false)
+        },
         ExportableConfigSpec(KEY_CUSTOM_DOWNLOAD_THREAD_ENABLED, ExportableValueType.BOOLEAN) { it.getBoolean(KEY_CUSTOM_DOWNLOAD_THREAD_ENABLED, false) },
         ExportableConfigSpec(KEY_SKIP_MINI_GAME_REWARD_AD_ENABLED, ExportableValueType.BOOLEAN) { it.getBoolean(KEY_SKIP_MINI_GAME_REWARD_AD_ENABLED, true) },
         ExportableConfigSpec(KEY_BLOCK_LIVE_RESERVATION_ENABLED, ExportableValueType.BOOLEAN) { it.getBoolean(KEY_BLOCK_LIVE_RESERVATION_ENABLED, false) },
@@ -224,6 +233,9 @@ object ModuleSettings {
         })
         add(ExportableConfigSpec(KEY_PURIFY_STORY_VIDEO_AD_TAGS, ExportableValueType.STRING_SET) {
             it.getStringSet(KEY_PURIFY_STORY_VIDEO_AD_TAGS, defaultStoryVideoAdTags)?.toSet() ?: defaultStoryVideoAdTags
+        })
+        add(ExportableConfigSpec(KEY_STORY_VIDEO_COMPONENT_ALPHA, ExportableValueType.INT) { prefs ->
+            getStoryVideoComponentAlphaPercent(prefs)
         })
         add(ExportableConfigSpec(KEY_HIDDEN_HOME_RECOMMEND_ITEMS, ExportableValueType.STRING_SET) {
             it.getStringSet(KEY_HIDDEN_HOME_RECOMMEND_ITEMS, emptySet<String>())?.toSet() ?: emptySet<String>()
@@ -402,6 +414,18 @@ object ModuleSettings {
 
     fun isPurifyStoryVideoAdEnabled(prefs: SharedPreferences): Boolean =
         prefs.getBoolean(KEY_PURIFY_STORY_VIDEO_AD_ENABLED, false)
+
+    fun isStoryVideoImmersiveFullscreenEnabled(prefs: SharedPreferences): Boolean =
+        prefs.getBoolean(KEY_STORY_VIDEO_IMMERSIVE_FULLSCREEN_ENABLED, false)
+
+    fun isStoryVideoKeepDanmakuOnCommentEnabled(prefs: SharedPreferences): Boolean =
+        prefs.getBoolean(KEY_STORY_VIDEO_KEEP_DANMAKU_ON_COMMENT_ENABLED, false)
+
+    fun getStoryVideoComponentAlphaPercent(prefs: SharedPreferences): Int =
+        prefs.getInt(KEY_STORY_VIDEO_COMPONENT_ALPHA, 100).coerceIn(0, 100)
+
+    fun getStoryVideoComponentAlpha(prefs: SharedPreferences): Float =
+        getStoryVideoComponentAlphaPercent(prefs) / 100f
 
     fun getPurifyStoryVideoAdTags(prefs: SharedPreferences): Set<String> =
         prefs.getStringSet(KEY_PURIFY_STORY_VIDEO_AD_TAGS, defaultStoryVideoAdTags)

@@ -63,6 +63,12 @@
     <!-- 竪屏視頻 -->
     <string name="purify_story_video_ad_title">净化竖屏视频广告</string>
     <string name="purify_story_video_ad_summary">按标签过滤竖屏视频流中的广告、购物和推广内容。</string>
+    <string name="story_video_immersive_fullscreen_title">竖屏视频沉浸全屏</string>
+    <string name="story_video_immersive_fullscreen_summary">进入竖屏视频页时隐藏通知栏和手势导航栏。</string>
+    <string name="story_video_keep_danmaku_on_comment_title">禁止隐藏弹幕</string>
+    <string name="story_video_keep_danmaku_on_comment_summary">打开竖屏视频评论区时不临时隐藏视频弹幕。</string>
+    <string name="story_video_component_alpha_title">控件透明度</string>
+    <string name="story_video_component_alpha_summary">当前值：%1$d%%。调整视频信息、右侧互动和顶部控件的透明度。</string>
     <string name="purify_story_video_ad_blocked_count">累计拦截：%1$d</string>
 
     <string name="copy_access_key_title">复制 AccessKey</string>
