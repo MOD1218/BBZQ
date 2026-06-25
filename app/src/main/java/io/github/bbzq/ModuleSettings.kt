@@ -30,7 +30,6 @@ object ModuleSettings {
     const val KEY_BLOCK_HOME_RECOMMEND_AUTO_REFRESH_ENABLED = "block_home_recommend_auto_refresh_enabled"
     const val KEY_CUSTOM_HOME_RECOMMEND_FILTER_ENABLED = "custom_home_recommend_filter_enabled"
     const val KEY_HIDDEN_HOME_RECOMMEND_ITEMS = "hidden_home_recommend_items"
-    const val KEY_KNOWN_HOME_RECOMMEND_ITEMS = "known_home_recommend_items"
     const val KEY_HIDE_ALL_HOME_COMPONENTS_ENABLED = "hide_all_home_components_enabled"
     const val KEY_CUSTOM_HOME_COMPONENT_HIDE_ENABLED = "custom_home_component_hide_enabled"
     const val KEY_HIDDEN_HOME_COMPONENTS = "hidden_home_components"
@@ -66,6 +65,24 @@ object ModuleSettings {
     const val KEY_MINE_REMOVE_VIP = "mine_remove_vip"
     const val KEY_MINE_KEEP_VIP_SPACE = "mine_keep_vip_space"
     const val MAX_HOME_RECOMMEND_TITLE_KEYWORDS = 64
+
+    const val HOME_RECOMMEND_FILTER_AD = "ad"
+    const val HOME_RECOMMEND_FILTER_PICTURE = "picture"
+    const val HOME_RECOMMEND_FILTER_GAME_PROMO = "game_promo"
+    const val HOME_RECOMMEND_FILTER_LIVE = "live"
+    const val HOME_RECOMMEND_FILTER_KETANG = "ketang"
+    const val HOME_RECOMMEND_FILTER_VERTICAL_AV = "vertical_av"
+    const val HOME_RECOMMEND_FILTER_LARGE_COVER = "large_cover"
+
+    val homeRecommendFilterKeys = listOf(
+        HOME_RECOMMEND_FILTER_AD,
+        HOME_RECOMMEND_FILTER_PICTURE,
+        HOME_RECOMMEND_FILTER_GAME_PROMO,
+        HOME_RECOMMEND_FILTER_LIVE,
+        HOME_RECOMMEND_FILTER_KETANG,
+        HOME_RECOMMEND_FILTER_VERTICAL_AV,
+        HOME_RECOMMEND_FILTER_LARGE_COVER,
+    )
 
     const val KEY_TARGET_APP_VERSION = "target_app_version"
     const val CACHE_BILI_SETTINGS_ACTIVITY = "cache_settings_activity"
@@ -129,8 +146,6 @@ object ModuleSettings {
     private var skipVideoAdCache: SkipVideoAdCache? = null
     @Volatile
     private var knownBottomBarItemsCache: Set<String>? = null
-    @Volatile
-    private var knownHomeRecommendItemsCache: Set<String>? = null
 
     enum class ExportableValueType {
         BOOLEAN,
@@ -298,15 +313,6 @@ object ModuleSettings {
     fun isFixLiveQualityUrlEnabled(prefs: SharedPreferences): Boolean =
         prefs.getBoolean(KEY_FIX_LIVE_QUALITY_URL_ENABLED, false)
 
-    fun isPurifyHomeRecommendAdEnabled(prefs: SharedPreferences): Boolean =
-        prefs.getBoolean(KEY_PURIFY_HOME_RECOMMEND_AD_ENABLED, false)
-
-    fun isPurifyHomeRecommendPictureEnabled(prefs: SharedPreferences): Boolean =
-        prefs.getBoolean(KEY_PURIFY_HOME_RECOMMEND_PICTURE_ENABLED, false)
-
-    fun isPurifyHomeRecommendGamePromoEnabled(prefs: SharedPreferences): Boolean =
-        prefs.getBoolean(KEY_PURIFY_HOME_RECOMMEND_GAME_PROMO_ENABLED, false)
-
     fun getHomeRecommendTitleKeywordsText(prefs: SharedPreferences): String =
         prefs.getString(KEY_HOME_RECOMMEND_TITLE_KEYWORDS, "").orEmpty()
 
@@ -326,24 +332,30 @@ object ModuleSettings {
         prefs.getBoolean(KEY_BLOCK_HOME_RECOMMEND_AUTO_REFRESH_ENABLED, false)
 
     fun isCustomHomeRecommendFilterEnabled(prefs: SharedPreferences): Boolean =
-        prefs.getBoolean(KEY_CUSTOM_HOME_RECOMMEND_FILTER_ENABLED, false)
+        prefs.getBoolean(KEY_CUSTOM_HOME_RECOMMEND_FILTER_ENABLED, false) ||
+            legacyHomeRecommendFilterItems(prefs).isNotEmpty()
 
     fun getHiddenHomeRecommendItems(prefs: SharedPreferences): Set<String> =
-        prefs.getStringSet(KEY_HIDDEN_HOME_RECOMMEND_ITEMS, emptySet()) ?: emptySet()
+        prefs.getStringSet(KEY_HIDDEN_HOME_RECOMMEND_ITEMS, emptySet())
+            ?.filterTo(linkedSetOf()) { it in homeRecommendFilterKeys }
+            .orEmpty() + legacyHomeRecommendFilterItems(prefs)
 
-    fun getKnownHomeRecommendItems(prefs: SharedPreferences): Set<String> =
-        knownHomeRecommendItemsCache
-            ?: prefs.getStringSet(KEY_KNOWN_HOME_RECOMMEND_ITEMS, emptySet())
-            ?: emptySet()
+    fun clearLegacyHomeRecommendFilterSwitches(editor: SharedPreferences.Editor): SharedPreferences.Editor =
+        editor
+            .putBoolean(KEY_PURIFY_HOME_RECOMMEND_AD_ENABLED, false)
+            .putBoolean(KEY_PURIFY_HOME_RECOMMEND_PICTURE_ENABLED, false)
+            .putBoolean(KEY_PURIFY_HOME_RECOMMEND_GAME_PROMO_ENABLED, false)
 
-    fun refreshKnownHomeRecommendItemsCache(prefs: SharedPreferences): Set<String> =
-        prefs.getStringSet(KEY_KNOWN_HOME_RECOMMEND_ITEMS, emptySet())
-            ?.toSet()
-            .orEmpty()
-            .also { knownHomeRecommendItemsCache = it }
-
-    fun cacheKnownHomeRecommendItems(items: Set<String>) {
-        knownHomeRecommendItemsCache = items.toSet()
+    private fun legacyHomeRecommendFilterItems(prefs: SharedPreferences): Set<String> = buildSet {
+        if (prefs.getBoolean(KEY_PURIFY_HOME_RECOMMEND_AD_ENABLED, false)) {
+            add(HOME_RECOMMEND_FILTER_AD)
+        }
+        if (prefs.getBoolean(KEY_PURIFY_HOME_RECOMMEND_PICTURE_ENABLED, false)) {
+            add(HOME_RECOMMEND_FILTER_PICTURE)
+        }
+        if (prefs.getBoolean(KEY_PURIFY_HOME_RECOMMEND_GAME_PROMO_ENABLED, false)) {
+            add(HOME_RECOMMEND_FILTER_GAME_PROMO)
+        }
     }
 
     fun isHideAllHomeComponentsEnabled(prefs: SharedPreferences): Boolean =

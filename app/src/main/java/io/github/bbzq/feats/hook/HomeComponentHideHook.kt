@@ -8,20 +8,17 @@ import io.github.bbzq.feats.callMethod
 import io.github.bbzq.feats.hookAfter
 import io.github.bbzq.feats.hookAfterMethod
 import io.github.bbzq.feats.hookAfterAllMethods
-import java.lang.reflect.Field
 import java.lang.reflect.Method
 import java.util.Collections
 import java.util.WeakHashMap
 
 class HomeComponentHideHook(env: io.github.bbzq.feats.RoamingEnv) : BaseRoamingHook(env) {
     private val knownComponents = linkedMapOf<String, String>()
-    private var homeRecommendFieldWriteFailedLogged = false
     private val attachedLayoutListeners =
         Collections.synchronizedMap(WeakHashMap<View, android.view.ViewTreeObserver.OnGlobalLayoutListener>())
 
     override fun startHook() {
         if (env.processName != env.packageName) return
-        ModuleSettings.refreshKnownHomeRecommendItemsCache(prefs)
         val fragmentClass = ANDROIDX_FRAGMENT.from(classLoader)
         if (fragmentClass == null) {
             log("startHook: HomeComponentHide missing androidx.fragment.app.Fragment")
@@ -36,7 +33,6 @@ class HomeComponentHideHook(env: io.github.bbzq.feats.RoamingEnv) : BaseRoamingH
             processFragment(param.thisObject)
         }
         count += hookHomeComponentCatalog()
-        count += hookHomeRecommendItems()
 
         if (count == 0) {
             log("startHook: HomeComponentHide no hook point found")
@@ -163,96 +159,6 @@ class HomeComponentHideHook(env: io.github.bbzq.feats.RoamingEnv) : BaseRoamingH
         root.visibility = if (shouldHide(className)) View.GONE else View.VISIBLE
     }
 
-    private fun hookHomeRecommendItems(): Int {
-        val feedSymbols = env.symbols?.homeRecommendFeed?.restore(classLoader) ?: return 0
-        var count = 0
-        feedSymbols.responseGetItems.forEach { response ->
-            val getItems = response.getItems
-            env.hookAfter(getItems) { param ->
-                val items = param.result as? List<*> ?: return@hookAfter
-                val hiddenKeys = ModuleSettings.getHiddenHomeRecommendItems(prefs)
-                val enabled = ModuleSettings.isCustomHomeRecommendFilterEnabled(prefs)
-                val filtered = ArrayList<Any?>(items.size)
-                val knownItems = linkedSetOf<String>()
-                var removed = 0
-
-                items.forEachIndexed { index, item ->
-                    val entry = item?.extractRecommendItemEntry(index, feedSymbols.getHolderType, feedSymbols.getBizType)
-                    if (entry == null) {
-                        filtered += item
-                        return@forEachIndexed
-                    }
-
-                    knownItems += encodeRecommendItem(entry.order, entry.key, entry.bizType, entry.className)
-                    if (enabled && entry.key in hiddenKeys) {
-                        removed += 1
-                    } else {
-                        filtered += item
-                    }
-                }
-
-                saveKnownHomeRecommendItems(knownItems)
-                if (removed == 0) return@hookAfter
-
-                param.result = filtered
-                writeBackFilteredItems(param.thisObject, response.itemsField, filtered)
-                log(
-                    "HomeComponentHide removed $removed home item(s) " +
-                        "from ${getItems.declaringClass.name}.${getItems.name}",
-                )
-            }
-            count += 1
-        }
-        return count
-    }
-
-    private fun Any.extractRecommendItemEntry(
-        index: Int,
-        getHolderType: Method,
-        getBizType: Method?,
-    ): HomeRecommendItem? {
-        val className = javaClass.name
-        val holderType = invokeString(getHolderType, this)
-            ?.takeIf { it.isNotBlank() }
-            ?: className.substringAfterLast('.').ifBlank { className }
-        if (holderType.isBlank()) return null
-        return HomeRecommendItem(
-            order = index,
-            key = holderType,
-            bizType = invokeString(getBizType, this).orEmpty(),
-            className = className,
-        )
-    }
-
-    private fun invokeString(method: Method?, target: Any): String? =
-        runCatching { method?.invoke(target)?.toString() }.getOrNull()
-
-    private fun saveKnownHomeRecommendItems(items: Set<String>) {
-        if (items.isEmpty()) return
-        val snapshot = ModuleSettings.getKnownHomeRecommendItems(prefs)
-        if (snapshot == items) return
-        ModuleSettings.cacheKnownHomeRecommendItems(items)
-        prefs.edit()
-            .putStringSet(ModuleSettings.KEY_KNOWN_HOME_RECOMMEND_ITEMS, items.toMutableSet())
-            .apply()
-    }
-
-    private fun writeBackFilteredItems(target: Any?, field: Field?, items: List<Any?>) {
-        if (target == null || field == null) return
-        runCatching {
-            field.set(target, items)
-        }.onFailure { throwable ->
-            if (!homeRecommendFieldWriteFailedLogged) {
-                homeRecommendFieldWriteFailedLogged = true
-                log("HomeComponentHide could not update PegasusResponse items field", throwable)
-            }
-        }
-    }
-
-    private fun encodeRecommendItem(order: Int, key: String, bizType: String, className: String): String =
-        listOf(order.toString(), key, bizType, className)
-            .joinToString("\t") { it.sanitizePart() }
-
     private fun String.sanitizePart(): String =
         replace('\t', ' ').replace('\n', ' ').replace('\r', ' ')
 
@@ -269,13 +175,6 @@ class HomeComponentHideHook(env: io.github.bbzq.feats.RoamingEnv) : BaseRoamingH
     private data class HomeComponentItem(
         val order: Int,
         val name: String,
-        val className: String,
-    )
-
-    private data class HomeRecommendItem(
-        val order: Int,
-        val key: String,
-        val bizType: String,
         val className: String,
     )
 

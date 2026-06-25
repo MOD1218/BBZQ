@@ -37,7 +37,6 @@ class HomeRecommendAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
 
     override fun startHook() {
         if (env.processName != env.packageName) return
-        ModuleSettings.refreshKnownHomeRecommendItemsCache(prefs)
         val options = currentOptions()
         if (!options.enabled) {
             log("startHook: HomeRecommendAd disabled, provider=${ModuleSettingsBridge.lastProviderStatus}")
@@ -91,11 +90,24 @@ class HomeRecommendAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
             itemsField = itemsField,
         )
 
-    private fun currentOptions(): FilterOptions =
+    private fun currentOptions(): FilterOptions {
+        val filterEnabled = ModuleSettings.isCustomHomeRecommendFilterEnabled(prefs)
+        val blockedItems = ModuleSettings.getHiddenHomeRecommendItems(prefs)
+        return homeRecommendFilterOptions(filterEnabled, blockedItems)
+    }
+
+    private fun homeRecommendFilterOptions(
+        enabled: Boolean,
+        blockedItems: Set<String>,
+    ): FilterOptions =
         FilterOptions(
-            removeAds = ModuleSettings.isPurifyHomeRecommendAdEnabled(prefs),
-            removePictures = ModuleSettings.isPurifyHomeRecommendPictureEnabled(prefs),
-            removeGamePromos = ModuleSettings.isPurifyHomeRecommendGamePromoEnabled(prefs),
+            removeAds = enabled && ModuleSettings.HOME_RECOMMEND_FILTER_AD in blockedItems,
+            removePictures = enabled && ModuleSettings.HOME_RECOMMEND_FILTER_PICTURE in blockedItems,
+            removeGamePromos = enabled && ModuleSettings.HOME_RECOMMEND_FILTER_GAME_PROMO in blockedItems,
+            removeLive = enabled && ModuleSettings.HOME_RECOMMEND_FILTER_LIVE in blockedItems,
+            removeKetang = enabled && ModuleSettings.HOME_RECOMMEND_FILTER_KETANG in blockedItems,
+            removeVerticalAv = enabled && ModuleSettings.HOME_RECOMMEND_FILTER_VERTICAL_AV in blockedItems,
+            removeLargeCover = enabled && ModuleSettings.HOME_RECOMMEND_FILTER_LARGE_COVER in blockedItems,
             titleKeywords = currentTitleKeywords(),
             openVerticalAvInDetail = ModuleSettings.isHomeRecommendVerticalAvDetailEnabled(prefs),
         )
@@ -343,10 +355,21 @@ class HomeRecommendAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
         appendPart(name, fieldValue(target, name))
     }
 
-    private fun fieldValue(target: Any, name: String): Any? =
-        runCatching {
-            target.javaClass.getField(name).get(target)
-        }.getOrNull()
+    private fun fieldValue(target: Any?, name: String): Any? =
+        if (target == null) {
+            null
+        } else {
+            runCatching {
+                target.javaClass.getField(name).get(target)
+            }.getOrNull()
+        }
+
+    private fun Any?.asIntOrNull(): Int? =
+        when (this) {
+            is Number -> toInt()
+            is String -> toIntOrNull()
+            else -> null
+        }
 
     private fun formatValue(value: Any?): String =
         when (value) {
@@ -420,6 +443,10 @@ class HomeRecommendAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
         }
         if (options.removePictures && isPictureCard(item, symbols)) return "picture"
         if (options.removeGamePromos && isGamePromoCard(item, holderType, symbols)) return "game_promo"
+        if (options.removeLive && isLiveCard(item, symbols)) return "live"
+        if (options.removeKetang && isKetangCard(item, symbols)) return "ketang"
+        if (options.removeVerticalAv && isVerticalAvCard(item, symbols)) return "vertical_av"
+        if (options.removeLargeCover && isLargeCoverCard(item, holderType, symbols)) return "large_cover"
         return null
     }
 
@@ -448,6 +475,44 @@ class HomeRecommendAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
         return cardGoto == PICTURE_GOTO ||
             goTo == PICTURE_GOTO ||
             uri?.startsWith(OPUS_URI_PREFIX) == true
+    }
+
+    private fun isLiveCard(item: Any, symbols: FilterSymbols): Boolean {
+        val cardGoto = invokeString(symbols.getCardGoto, item)
+        val goTo = invokeString(symbols.getGoTo, item)
+        val uri = invokeString(symbols.getUri, item)
+        val playerArgs = callNoArg(item, "getPlayerArgs")
+        return cardGoto == LIVE_GOTO ||
+            goTo == LIVE_GOTO ||
+            uri?.contains(LIVE_URI_PART) == true ||
+            fieldValue(playerArgs, "isLive").asIntOrNull() == 1 ||
+            fieldValue(playerArgs, "videoType") == LIVE_GOTO
+    }
+
+    private fun isKetangCard(item: Any, symbols: FilterSymbols): Boolean {
+        val cardGoto = invokeString(symbols.getCardGoto, item)
+        val goTo = invokeString(symbols.getGoTo, item)
+        val uri = invokeString(symbols.getUri, item)
+        return cardGoto == KETANG_GOTO ||
+            goTo == KETANG_GOTO ||
+            uri?.contains(KETANG_URI_PART) == true
+    }
+
+    private fun isVerticalAvCard(item: Any, symbols: FilterSymbols): Boolean {
+        val cardGoto = invokeString(symbols.getCardGoto, item)
+        val goTo = invokeString(symbols.getGoTo, item)
+        val uri = invokeString(symbols.getUri, item)
+        return cardGoto == VERTICAL_AV_GOTO ||
+            goTo == VERTICAL_AV_GOTO ||
+            uri?.startsWith(STORY_URI_PREFIX) == true
+    }
+
+    private fun isLargeCoverCard(item: Any, holderType: String?, symbols: FilterSymbols): Boolean {
+        val cardType = invokeString(symbols.getCardType, item)
+        val cardGoto = invokeString(symbols.getCardGoto, item)
+        return holderType?.startsWith(LARGE_COVER_PREFIX) == true ||
+            cardType?.startsWith(LARGE_COVER_PREFIX) == true ||
+            (cardGoto == INLINE_AV_V2_GOTO && isWideCard(item, symbols))
     }
 
     private fun isGamePromoCard(item: Any, holderType: String?, symbols: FilterSymbols): Boolean {
@@ -663,12 +728,16 @@ class HomeRecommendAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
         val removeAds: Boolean,
         val removePictures: Boolean,
         val removeGamePromos: Boolean,
+        val removeLive: Boolean,
+        val removeKetang: Boolean,
+        val removeVerticalAv: Boolean,
+        val removeLargeCover: Boolean,
         val titleKeywords: List<String>,
         val openVerticalAvInDetail: Boolean,
     ) {
-        val shouldFilter: Boolean = removeAds || removePictures || removeGamePromos || titleKeywords.isNotEmpty()
-        val enabled: Boolean = removeAds || removePictures || removeGamePromos || openVerticalAvInDetail
-            || titleKeywords.isNotEmpty()
+        val shouldFilter: Boolean = removeAds || removePictures || removeGamePromos || removeLive ||
+            removeKetang || removeVerticalAv || removeLargeCover || titleKeywords.isNotEmpty()
+        val enabled: Boolean = shouldFilter || openVerticalAvInDetail
     }
 
     private data class FilterResult(
@@ -687,7 +756,13 @@ class HomeRecommendAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
         private const val AD_GOTO_PREFIX = "ad_"
         private const val PICTURE_GOTO = "picture"
         private const val AV_GOTO = "av"
+        private const val LIVE_GOTO = "live"
+        private const val KETANG_GOTO = "ketang"
         private const val VERTICAL_AV_GOTO = "vertical_av"
+        private const val INLINE_AV_V2_GOTO = "inline_av_v2"
+        private const val LARGE_COVER_PREFIX = "large_cover"
+        private const val LIVE_URI_PART = "live.bilibili.com/"
+        private const val KETANG_URI_PART = "/cheese/play/"
         private const val STORY_URI_PREFIX = "bilibili://story/"
         private const val VIDEO_URI_PREFIX = "bilibili://video/"
         private const val OPUS_URI_PREFIX = "bilibili://opus/"

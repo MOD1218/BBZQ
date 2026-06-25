@@ -230,24 +230,6 @@ class SettingsContentFactory(
 
     private fun homeRecommendRows(): List<View> {
         val rows = mutableListOf<View>()
-        rows += createSwitchRow(
-            context.getString(R.string.home_recommend_ad_title),
-            context.getString(R.string.home_recommend_ad_summary),
-            ModuleSettings.KEY_PURIFY_HOME_RECOMMEND_AD_ENABLED,
-            false,
-        )
-        rows += createSwitchRow(
-            context.getString(R.string.home_recommend_picture_title),
-            context.getString(R.string.home_recommend_picture_summary),
-            ModuleSettings.KEY_PURIFY_HOME_RECOMMEND_PICTURE_ENABLED,
-            false,
-        )
-        rows += createSwitchRow(
-            context.getString(R.string.home_recommend_game_promo_title),
-            context.getString(R.string.home_recommend_game_promo_summary),
-            ModuleSettings.KEY_PURIFY_HOME_RECOMMEND_GAME_PROMO_ENABLED,
-            false,
-        )
         rows += createHomeRecommendTitleKeywordRow()
         rows += createSwitchRow(
             context.getString(R.string.home_recommend_vertical_av_detail_title),
@@ -270,19 +252,11 @@ class SettingsContentFactory(
             homeRecommendItemSwitch = it
         }
 
-        val recommendItems = homeRecommendItems()
-        if (recommendItems.isEmpty()) {
-            rows += createInfoRow(
-                context.getString(R.string.home_recommend_custom_filter_item_title),
-                context.getString(R.string.home_recommend_custom_filter_unavailable_summary),
-            )
-        } else {
-            rows += createInfoRow(
-                context.getString(R.string.home_recommend_custom_filter_item_title),
-                context.getString(R.string.home_recommend_custom_filter_info_summary),
-            )
-            rows += createHomeRecommendItemGroup(recommendItems)
-        }
+        rows += createInfoRow(
+            context.getString(R.string.home_recommend_custom_filter_item_title),
+            context.getString(R.string.home_recommend_custom_filter_info_summary),
+        )
+        rows += createHomeRecommendItemGroup(homeRecommendItems())
         rows += createSwitchRow(
             context.getString(R.string.home_recommend_hide_all_title),
             context.getString(R.string.home_recommend_hide_all_summary),
@@ -1082,11 +1056,7 @@ class SettingsContentFactory(
             setPadding(dp(10), dp(8), dp(10), dp(8))
             items.forEach { item ->
                 addView(CheckBox(context).apply {
-                    text = if (item.bizType.isBlank()) {
-                        "${item.key}\n${item.className}"
-                    } else {
-                        "${item.key}\n${item.bizType}\n${item.className}"
-                    }
+                    text = "${item.title}\n${item.summary}"
                     textSize = 14f
                     setTextColor(TITLE_COLOR)
                     setPadding(dp(6), dp(2), dp(6), dp(2))
@@ -1148,6 +1118,9 @@ class SettingsContentFactory(
         val editor = prefs.edit().putBoolean(key, isChecked)
         if (key == ModuleSettings.KEY_SKIP_VIDEO_AD_ENABLED && isChecked) {
             editor.putBoolean(ModuleSettings.KEY_SKIP_VIDEO_AD_AUTO_LIKE_ENABLED, true)
+        }
+        if (key == ModuleSettings.KEY_CUSTOM_HOME_RECOMMEND_FILTER_ENABLED) {
+            ModuleSettings.clearLegacyHomeRecommendFilterSwitches(editor)
         }
         editor.apply()
 
@@ -1287,7 +1260,7 @@ class SettingsContentFactory(
         }
         homeRecommendItemCheckBoxes.forEach { (key, checkBox) ->
             checkBox.isEnabled = homeRecommendFilterEnabled
-            checkBox.isChecked = key !in hiddenHomeRecommendItems
+            checkBox.isChecked = key in hiddenHomeRecommendItems
         }
         if (::hideAllHomeComponentsSwitch.isInitialized) {
             hideAllHomeComponentsSwitch.isChecked = hideAllHomeComponentsEnabled
@@ -1352,6 +1325,7 @@ class SettingsContentFactory(
                 ModuleSettings.KEY_HIDDEN_HOME_RECOMMEND_ITEMS,
                 hiddenHomeRecommendItemKeys().toMutableSet(),
             )
+            .also { ModuleSettings.clearLegacyHomeRecommendFilterSwitches(it) }
             .apply()
     }
 
@@ -1368,7 +1342,7 @@ class SettingsContentFactory(
         bottomBarItemCheckBoxes.filterValues { !it.isChecked }.keys.toSet()
 
     private fun hiddenHomeRecommendItemKeys(): Set<String> =
-        homeRecommendItemCheckBoxes.filterValues { !it.isChecked }.keys.toSet()
+        homeRecommendItemCheckBoxes.filterValues { it.isChecked }.keys.toSet()
 
     private fun hiddenHomeComponentClassNames(): Set<String> =
         homeComponentCheckBoxes.filterValues { !it.isChecked }.keys.toSet()
@@ -1418,11 +1392,43 @@ class SettingsContentFactory(
             .distinctBy(BottomBarItem::id)
             .sortedBy(BottomBarItem::order)
 
-    private fun homeRecommendItems(): List<HomeRecommendItem> =
-        ModuleSettings.getKnownHomeRecommendItems(prefs)
-            .mapNotNull(::parseHomeRecommendItem)
-            .distinctBy(HomeRecommendItem::key)
-            .sortedWith(compareBy<HomeRecommendItem> { it.order }.thenBy { it.key }.thenBy { it.className })
+    private fun homeRecommendItems(): List<HomeRecommendItem> = listOf(
+        HomeRecommendItem(
+            ModuleSettings.HOME_RECOMMEND_FILTER_AD,
+            context.getString(R.string.home_recommend_filter_ad_title),
+            context.getString(R.string.home_recommend_filter_ad_summary),
+        ),
+        HomeRecommendItem(
+            ModuleSettings.HOME_RECOMMEND_FILTER_PICTURE,
+            context.getString(R.string.home_recommend_filter_picture_title),
+            context.getString(R.string.home_recommend_filter_picture_summary),
+        ),
+        HomeRecommendItem(
+            ModuleSettings.HOME_RECOMMEND_FILTER_GAME_PROMO,
+            context.getString(R.string.home_recommend_filter_game_promo_title),
+            context.getString(R.string.home_recommend_filter_game_promo_summary),
+        ),
+        HomeRecommendItem(
+            ModuleSettings.HOME_RECOMMEND_FILTER_LIVE,
+            context.getString(R.string.home_recommend_filter_live_title),
+            context.getString(R.string.home_recommend_filter_live_summary),
+        ),
+        HomeRecommendItem(
+            ModuleSettings.HOME_RECOMMEND_FILTER_KETANG,
+            context.getString(R.string.home_recommend_filter_ketang_title),
+            context.getString(R.string.home_recommend_filter_ketang_summary),
+        ),
+        HomeRecommendItem(
+            ModuleSettings.HOME_RECOMMEND_FILTER_VERTICAL_AV,
+            context.getString(R.string.home_recommend_filter_vertical_av_title),
+            context.getString(R.string.home_recommend_filter_vertical_av_summary),
+        ),
+        HomeRecommendItem(
+            ModuleSettings.HOME_RECOMMEND_FILTER_LARGE_COVER,
+            context.getString(R.string.home_recommend_filter_large_cover_title),
+            context.getString(R.string.home_recommend_filter_large_cover_summary),
+        ),
+    )
 
     private fun homeComponentItems(): List<HomeComponentItem> =
         ModuleSettings.getKnownHomeComponents(prefs)
@@ -1440,13 +1446,6 @@ class SettingsContentFactory(
             return BottomBarItem(Int.MAX_VALUE, parts[0], parts[1], parts[2])
         }
         return null
-    }
-
-    private fun parseHomeRecommendItem(raw: String): HomeRecommendItem? {
-        val parts = raw.split('\t', limit = 4)
-        if (parts.size != 4) return null
-        val order = parts[0].toIntOrNull() ?: return null
-        return HomeRecommendItem(order, parts[1], parts[2], parts[3])
     }
 
     private fun parseHomeComponentItem(raw: String): HomeComponentItem? {
@@ -1476,10 +1475,9 @@ class SettingsContentFactory(
     )
 
     private data class HomeRecommendItem(
-        val order: Int,
         val key: String,
-        val bizType: String,
-        val className: String,
+        val title: String,
+        val summary: String,
     )
 
     private data class HomeComponentItem(
