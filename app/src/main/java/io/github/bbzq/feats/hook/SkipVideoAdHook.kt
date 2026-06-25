@@ -44,6 +44,7 @@ class SkipVideoAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
     private var playerCoreServiceRef: WeakReference<Any>? = null
     private var cardPlayerContextRef: WeakReference<Any>? = null
     private val reflectionFailureLogs = ConcurrentHashMap.newKeySet<String>()
+    private val seekMethodsByControllerClass = ConcurrentHashMap<Class<*>, List<Method>>()
     private val playerCoreService: Any?
         get() = playerCoreServiceRef?.get()
     private val cardPlayerContext: Any?
@@ -65,6 +66,7 @@ class SkipVideoAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
             return
         }
         ensureActivityTracking()
+        cacheSeekMethods(symbols)
         val count = installHookGroup("playView") { hookPlayViewUnite(symbols) } +
             installHookGroup("playerCore") { hookPlayerCoreService(symbols) } +
             installHookGroup("cardPlayer") { hookCardPlayerContext(symbols) }
@@ -205,6 +207,15 @@ class SkipVideoAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
     private fun hookCardPlayerContext(symbols: RestoredSkipVideoAdSymbols): Int {
         return hookCurrentPositionMethods(symbols.cardCurrentPositionMethods, CARD_STATE_METHOD_NAMES) +
             hookPlayerStateMethods(symbols.cardStateMethods, CARD_STATE_METHOD_NAMES)
+    }
+
+    private fun cacheSeekMethods(symbols: RestoredSkipVideoAdSymbols) {
+        seekMethodsByControllerClass.clear()
+        (symbols.playerCoreSeekMethods + symbols.cardSeekMethods)
+            .groupBy { it.declaringClass }
+            .forEach { (type, methods) ->
+                seekMethodsByControllerClass[type] = methods.distinctBy(Method::toGenericString)
+            }
     }
 
     private fun hookCurrentPositionMethods(methods: List<Method>, stateMethodNames: Set<String>): Int {
@@ -429,36 +440,31 @@ class SkipVideoAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
     }
 
     private fun invokeSeek(controller: Any, position: Long): Boolean {
-        val method = controller.javaClass.safeAllMethods("seek target")
-            .firstOrNull { it.isSeekToMethod() }
-            ?: return false
-        val args = when (method.parameterCount) {
-            1 -> arrayOf(position.coerceToMethodType(method.parameterTypes[0]))
-            2 -> arrayOf(position.coerceToMethodType(method.parameterTypes[0]), true)
-            else -> return false
+        seekMethodsFor(controller).forEach { method ->
+            val args = when (method.parameterCount) {
+                1 -> arrayOf(position.coerceToMethodType(method.parameterTypes[0]))
+                2 -> arrayOf(position.coerceToMethodType(method.parameterTypes[0]), true)
+                else -> return@forEach
+            }
+            val invoked = runCatching {
+                method.invoke(controller, *args)
+                true
+            }.onFailure {
+                log("SkipVideoAd seekTo failed via ${controller.javaClass.name}", it)
+            }.getOrDefault(false)
+            if (invoked) return true
         }
-        return runCatching {
-            method.invoke(controller, *args)
-            true
-        }.onFailure {
-            log("SkipVideoAd seekTo failed via ${controller.javaClass.name}", it)
-        }.getOrDefault(false)
+        return false
     }
 
-    private fun Method.isSeekToMethod(): Boolean {
-        if (name != "seekTo" || parameterCount !in 1..2) return false
-        if (!parameterTypes[0].isNumericType()) return false
-        return parameterCount == 1 || parameterTypes[1].isBooleanType()
+    private fun seekMethodsFor(controller: Any): List<Method> {
+        val controllerType = controller.javaClass
+        seekMethodsByControllerClass[controllerType]?.let { return it }
+        return seekMethodsByControllerClass.entries
+            .firstOrNull { (type, _) -> type.isAssignableFrom(controllerType) }
+            ?.value
+            .orEmpty()
     }
-
-    private fun Class<*>.isNumericType(): Boolean =
-        this == Int::class.javaPrimitiveType ||
-            this == Int::class.javaObjectType ||
-            this == Long::class.javaPrimitiveType ||
-            this == Long::class.javaObjectType
-
-    private fun Class<*>.isBooleanType(): Boolean =
-        this == Boolean::class.javaPrimitiveType || this == Boolean::class.javaObjectType
 
     private fun Class<*>.safeAllMethods(reason: String): List<Method> =
         runCatching { allMethods().toList() }
