@@ -281,4 +281,12 @@
     <string name="comment_picture_view_open_label">查看图片</string>
     <string name="comment_picture_view_share_label">分享</string>
     <string name="comment_picture_view_open_failed">无法打开图片链接</string>
+    
+    <!-- 动态页 -->
+    <string name="dynamic_preferred_video_tab_title">首选打开视频标签</string>
+    <string name="dynamic_preferred_video_tab_summary">在动态页优先打开视频标签。</string>
+    <string name="dynamic_remove_city_tab_title">移除同城标签</string>
+    <string name="dynamic_remove_city_tab_summary">隐藏动态页里的同城入口。</string>
+    <string name="dynamic_remove_school_tab_title">移除校园标签</string>
+    <string name="dynamic_remove_school_tab_summary">隐藏动态页里的校园入口。</string>
 </resources>

@@ -9,6 +9,7 @@ import io.github.bbzq.feats.hook.AutoLikeHook
 import io.github.bbzq.feats.hook.AccessKeyHook
 import io.github.bbzq.feats.hook.ChronosPromotionHook
 import io.github.bbzq.feats.hook.DownloadThreadHook
+import io.github.bbzq.feats.hook.DynamicPageHook
 import io.github.bbzq.feats.hook.TeenagersModeHook
 import io.github.bbzq.feats.hook.TryFreeQualityHook
 import io.github.bbzq.feats.hook.FreeCopyHook
@@ -103,6 +104,7 @@ object RoamingRuntime {
                 ::HomeRecommendTabHook,
                 ::HomeRecommendAutoRefreshHook,
                 ::HomeRecommendPreloadHook,
+                ::DynamicPageHook,
                 ::HomeTopBarPurifyHook,
                 ::StoryPlayerAdHook,
                 ::StoryFullscreenHook,
