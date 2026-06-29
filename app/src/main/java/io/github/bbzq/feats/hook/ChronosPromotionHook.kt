@@ -34,7 +34,7 @@ class ChronosPromotionHook(env: RoamingEnv) : BaseRoamingHook(env) {
     override fun startHook() {
         if (env.processName != env.packageName) return
         if (!ModuleSettings.isBlockChronosPromotionEnabled(prefs)) {
-            log("startHook: ChronosPromotion disabled, provider=${ModuleSettingsBridge.lastProviderStatus}")
+            log("startHook: ChronosPromotion disabled, settings=${ModuleSettingsBridge.lastStatus}")
             return
         }
         val symbols = env.symbols?.chronosPromotion?.restore(classLoader)

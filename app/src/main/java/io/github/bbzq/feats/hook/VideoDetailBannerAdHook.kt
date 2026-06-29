@@ -29,7 +29,7 @@ class VideoDetailBannerAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
         if (env.processName != env.packageName) return
         val enabled = ModuleSettings.isBlockVideoDetailBannerAdEnabled(prefs)
         if (!enabled) {
-            log("startHook: VideoDetailBannerAd disabled, provider=${ModuleSettingsBridge.lastProviderStatus}")
+            log("startHook: VideoDetailBannerAd disabled, settings=${ModuleSettingsBridge.lastStatus}")
             return
         }
 

@@ -18,7 +18,7 @@ class StoryComponentAlphaHook(env: RoamingEnv) : BaseRoamingHook(env) {
         if (env.processName != env.packageName) return
         val alpha = ModuleSettings.getStoryVideoComponentAlpha(prefs)
         if (alpha >= 1f) {
-            log("startHook: StoryComponentAlpha disabled, provider=${ModuleSettingsBridge.lastProviderStatus}")
+            log("startHook: StoryComponentAlpha disabled, settings=${ModuleSettingsBridge.lastStatus}")
             return
         }
 

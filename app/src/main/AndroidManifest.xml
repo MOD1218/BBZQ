@@ -42,14 +42,6 @@
             </intent-filter>
         </activity>
 
-        <receiver
-            android:name=".ModuleSettingsUpdateReceiver"
-            android:exported="true" />
-
-        <provider
-            android:name=".ModuleSettingsProvider"
-            android:authorities="io.github.bbzq.settings"
-            android:exported="true" />
     </application>
 
 </manifest>

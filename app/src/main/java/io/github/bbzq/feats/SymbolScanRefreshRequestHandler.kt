@@ -6,7 +6,6 @@ import android.content.SharedPreferences
 import android.os.Handler
 import android.os.Looper
 import io.github.bbzq.ModuleSettings
-import io.github.bbzq.ModuleSettingsBridge
 import io.github.bbzq.feats.symbol.BiliSymbolResolver
 import io.github.libxposed.api.XposedInterface
 import java.util.concurrent.ConcurrentHashMap
@@ -35,15 +34,12 @@ object SymbolScanRefreshRequestHandler {
             env.log("Symbol scan refresh request listener unavailable", it)
             return
         }
-        val handledPrefs = env.hostContext.getSharedPreferences(
-            ModuleSettingsBridge.HOST_SNAPSHOT_PREFS_NAME,
-            Context.MODE_PRIVATE,
-        )
+        val handledPrefs = env.hostContext.applicationContext
+            .getSharedPreferences(BiliSymbolResolver.CACHE_PREFS_NAME, Context.MODE_PRIVATE)
         val lastHandled = AtomicReference(
             runCatching {
-                remotePrefs.getString(ModuleSettings.KEY_SYMBOL_SCAN_REFRESH_HANDLED_ID, null)
-            }.getOrNull()
-                ?: handledPrefs.getString(ModuleSettings.KEY_SYMBOL_SCAN_REFRESH_HANDLED_ID, null),
+                handledPrefs.getString(ModuleSettings.KEY_SYMBOL_SCAN_REFRESH_HANDLED_ID, null)
+            }.getOrNull(),
         )
 
         fun handlePendingRequest(trigger: String) {
@@ -60,24 +56,22 @@ object SymbolScanRefreshRequestHandler {
                 env.log("Symbol scan refresh request ignored while scan is running trigger=$trigger")
                 return
             }
-            handledPrefs.edit()
-                .putString(ModuleSettings.KEY_SYMBOL_SCAN_REFRESH_HANDLED_ID, requestId)
-                .commit()
             lastHandled.set(requestId)
             thread(name = "BBZQ-SymbolRefresh", isDaemon = true) {
                 try {
                     env.log("Symbol scan refresh request accepted id=$requestId trigger=$trigger")
-                    ModuleSettingsBridge.attach(env.hostContext, xposed)
-                    ModuleSettingsBridge.instance.edit()
-                        .putString(ModuleSettings.KEY_SYMBOL_SCAN_REFRESH_HANDLED_ID, requestId)
-                        .commit()
+                    val markerPersisted = markRequestHandled(env, handledPrefs, requestId)
                     env.symbols = BiliSymbolResolver.forceRefresh(
                         hostContext = env.hostContext,
                         classLoader = classLoader,
                         log = env::log,
                     )
                     env.log("Symbol scan refresh request completed id=$requestId")
-                    restartHostApp(env, requestId)
+                    if (markerPersisted) {
+                        restartHostApp(env, requestId)
+                    } else {
+                        env.log("Symbol scan refresh restart skipped id=$requestId: handled marker not persisted")
+                    }
                 } catch (throwable: Throwable) {
                     env.log("Symbol scan refresh request failed id=$requestId", throwable)
                 } finally {
@@ -98,6 +92,21 @@ object SymbolScanRefreshRequestHandler {
         handlePendingRequest("install")
         pollPendingRequests(::handlePendingRequest)
         env.log("Symbol scan refresh request listener installed")
+    }
+
+    private fun markRequestHandled(
+        env: RoamingEnv,
+        prefs: SharedPreferences,
+        requestId: String,
+    ): Boolean {
+        return runCatching {
+            prefs.edit()
+                .putString(ModuleSettings.KEY_SYMBOL_SCAN_REFRESH_HANDLED_ID, requestId)
+                .commit()
+        }.getOrElse {
+            env.log("Symbol scan refresh handled marker write failed id=$requestId", it)
+            false
+        }
     }
 
     private fun pollPendingRequests(handlePendingRequest: (String) -> Unit) {

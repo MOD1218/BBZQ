@@ -28,13 +28,13 @@ object ModuleRemotePreferences : XposedServiceHelper.OnServiceListener {
 
     fun attach(context: Context, prefs: SharedPreferences) {
         init(context)
-        syncSnapshot(prefs)
+        syncLocalToRemote(prefs)
     }
 
     override fun onServiceBind(service: XposedService) {
         this.service = service
         appContext?.let { context ->
-            syncSnapshot(context.moduleSettingsPreferences())
+            syncLocalToRemote(context.moduleSettingsPreferences())
         }
     }
 
@@ -42,7 +42,7 @@ object ModuleRemotePreferences : XposedServiceHelper.OnServiceListener {
         if (this.service === service) this.service = null
     }
 
-    fun syncSnapshot(prefs: SharedPreferences) {
+    private fun syncLocalToRemote(prefs: SharedPreferences) {
         val values = prefs.all
         withRemoteEditor { editor ->
             editor.clear()
@@ -97,19 +97,10 @@ object ModuleRemotePreferences : XposedServiceHelper.OnServiceListener {
                     return@thread
                 }
                 val requestId = UUID.randomUUID().toString()
-                val beforeUpdatedAt = context.moduleSettingsPreferences()
-                    .getString(ModuleSettings.KEY_SYMBOL_SCAN_STATUS_UPDATED_AT, null)
-                val completed = AtomicBoolean(false)
                 submitSymbolScanRequest(currentService, requestId)
-                pollSymbolScanResult(
-                    context = context,
-                    beforeUpdatedAt = beforeUpdatedAt,
-                    startedAt = System.currentTimeMillis(),
-                    completed = completed,
-                    callback = callback,
-                    attempt = 0,
-                )
-                Log.i(TAG, "symbol cache refresh waits for runtime request id=$requestId")
+                scheduleSymbolScanRequestCleanup(currentService, requestId)
+                dispatch(callback, context.getString(R.string.symbol_cache_refresh_submitted_toast))
+                Log.i(TAG, "symbol cache refresh request sent id=$requestId")
             }.onFailure {
                 fail(callback, "请求重扫失败：${it.javaClass.simpleName}: ${it.message}")
             }
@@ -128,48 +119,31 @@ object ModuleRemotePreferences : XposedServiceHelper.OnServiceListener {
         service: XposedService,
         requestId: String,
     ) {
-        val editor = service.getRemotePreferences(ModuleSettings.PREFS_NAME).edit()
+        val editor = service.remoteSettingsPreferences().edit()
         editor.putString(ModuleSettings.KEY_SYMBOL_SCAN_REFRESH_REQUEST_ID, requestId)
         check(editor.commit()) { "remote preference commit failed" }
         Log.i(TAG, "symbol cache refresh request submitted id=$requestId")
     }
 
-    private fun pollSymbolScanResult(
-        context: Context,
-        beforeUpdatedAt: String?,
-        startedAt: Long,
-        completed: AtomicBoolean,
-        callback: (String) -> Unit,
-        attempt: Int,
+    private fun scheduleSymbolScanRequestCleanup(
+        service: XposedService,
+        requestId: String,
     ) {
-        if (completed.get()) return
-        val updatedAt = context.moduleSettingsPreferences()
-            .getString(ModuleSettings.KEY_SYMBOL_SCAN_STATUS_UPDATED_AT, null)
-        val updatedAtMillis = updatedAt?.toLongOrNull() ?: 0L
-        if (updatedAt != null && updatedAt != beforeUpdatedAt && updatedAtMillis >= startedAt - 1_000L) {
-            if (completed.compareAndSet(false, true)) {
-                dispatch(callback, context.getString(R.string.symbol_cache_refresh_complete_restart_toast))
-            }
-            return
-        }
-        if (attempt >= SYMBOL_SCAN_RESULT_MAX_POLL_ATTEMPTS) {
-            if (completed.compareAndSet(false, true)) {
-                dispatch(callback, "已发送重扫请求，但等待扫描结果超时。请重新进入 BBZQ 设置查看最新状态")
-            }
-            return
-        }
         mainHandler.postDelayed(
             {
-                pollSymbolScanResult(
-                    context = context,
-                    beforeUpdatedAt = beforeUpdatedAt,
-                    startedAt = startedAt,
-                    completed = completed,
-                    callback = callback,
-                    attempt = attempt + 1,
-                )
+                runCatching {
+                    val prefs = service.remoteSettingsPreferences()
+                    if (prefs.getString(ModuleSettings.KEY_SYMBOL_SCAN_REFRESH_REQUEST_ID, null) != requestId) {
+                        return@runCatching
+                    }
+                    prefs.edit()
+                        .remove(ModuleSettings.KEY_SYMBOL_SCAN_REFRESH_REQUEST_ID)
+                        .commit()
+                }.onFailure {
+                    Log.w(TAG, "symbol cache refresh request cleanup failed: ${it.javaClass.simpleName}: ${it.message}")
+                }
             },
-            SYMBOL_SCAN_RESULT_POLL_MS,
+            SYMBOL_SCAN_REQUEST_CLEANUP_MS,
         )
     }
 
@@ -187,7 +161,7 @@ object ModuleRemotePreferences : XposedServiceHelper.OnServiceListener {
     private fun withRemoteEditor(block: (SharedPreferences.Editor) -> Unit) {
         val currentService = service ?: return
         runCatching {
-            val editor = currentService.getRemotePreferences(ModuleSettings.PREFS_NAME).edit()
+            val editor = currentService.remoteSettingsPreferences().edit()
             block(editor)
             editor.commit()
         }.onFailure {
@@ -212,11 +186,13 @@ object ModuleRemotePreferences : XposedServiceHelper.OnServiceListener {
     private fun Context.moduleSettingsPreferences(): SharedPreferences =
         getSharedPreferences(ModuleSettings.PREFS_NAME, Context.MODE_PRIVATE)
 
+    private fun XposedService.remoteSettingsPreferences(): SharedPreferences =
+        getRemotePreferences(ModuleSettings.PREFS_NAME)
+
     private const val SYMBOL_REFRESH_THREAD_NAME = "BBZQ-SymbolRefresh"
     private const val SERVICE_WAIT_RETRY_MS = 500L
     private const val SERVICE_WAIT_MAX_ATTEMPTS = 10
-    private const val SYMBOL_SCAN_RESULT_POLL_MS = 500L
-    private const val SYMBOL_SCAN_RESULT_MAX_POLL_ATTEMPTS = 120
+    private const val SYMBOL_SCAN_REQUEST_CLEANUP_MS = 30_000L
 }
 
 sealed interface PreferenceOperation {

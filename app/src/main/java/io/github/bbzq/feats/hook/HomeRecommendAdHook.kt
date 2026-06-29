@@ -39,7 +39,7 @@ class HomeRecommendAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
         if (env.processName != env.packageName) return
         val options = currentOptions()
         if (!options.enabled) {
-            log("startHook: HomeRecommendAd disabled, provider=${ModuleSettingsBridge.lastProviderStatus}")
+            log("startHook: HomeRecommendAd disabled, settings=${ModuleSettingsBridge.lastStatus}")
             return
         }
 

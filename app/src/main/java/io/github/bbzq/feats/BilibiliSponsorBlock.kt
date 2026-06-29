@@ -7,7 +7,6 @@ import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 import java.security.MessageDigest
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 class BilibiliSponsorBlock(
@@ -21,21 +20,11 @@ class BilibiliSponsorBlock(
             return FetchResult(FetchStatus.FAILED, emptyList())
         }
 
-        val cached = cache[trimmedBvid]
-            ?.takeIf { !it.isExpired() }
-            ?.result
-        if (cached != null) {
-            return cached.filterByCategories(enabledCategories).filterByCid(cid)
-        }
-
         val hashPrefix = trimmedBvid.sha256().take(HASH_PREFIX_LENGTH)
         val result = BASE_URLS.asSequence()
             .map { baseUrl -> fetchSegments(buildRequest(baseUrl, hashPrefix), trimmedBvid) }
             .firstOrNull { it.status != FetchStatus.FAILED && it.status != FetchStatus.NOT_FOUND }
             ?: fetchSegments(buildRequest(BASE_URLS.last(), hashPrefix), trimmedBvid)
-        if (result.status.shouldCache) {
-            cache[trimmedBvid] = CacheEntry(result)
-        }
         return result.filterByCategories(enabledCategories).filterByCid(cid)
     }
 
@@ -184,25 +173,17 @@ class BilibiliSponsorBlock(
         val httpStatusCode: Int? = null,
     )
 
-    enum class FetchStatus(val shouldCache: Boolean) {
-        SUCCESS(true),
-        EMPTY(true),
-        FILTERED_BY_CATEGORY(true),
-        FILTERED_BY_CID(true),
-        NOT_FOUND(true),
-        FAILED(false),
-    }
-
-    private data class CacheEntry(
-        val result: FetchResult,
-        val timestamp: Long = System.currentTimeMillis(),
-    ) {
-        fun isExpired(): Boolean = System.currentTimeMillis() - timestamp > CACHE_TTL_MS
+    enum class FetchStatus {
+        SUCCESS,
+        EMPTY,
+        FILTERED_BY_CATEGORY,
+        FILTERED_BY_CID,
+        NOT_FOUND,
+        FAILED,
     }
 
     private companion object {
         private const val ACTION_SKIP = "skip"
-        private const val CACHE_TTL_MS = 5 * 60 * 1000L
         private const val HASH_PREFIX_LENGTH = 4
         private const val REQUEST_ORIGIN = "BBZQ"
         private const val USER_AGENT = "Mozilla/5.0 (Linux; Android; Xposed; NkBe) BBZQ/1.0"
@@ -212,7 +193,6 @@ class BilibiliSponsorBlock(
             "https://www.bsbsb.xyz/api/skipSegments/",
             "http://154.222.28.109/api/skipSegments/",
         )
-        private val cache = ConcurrentHashMap<String, CacheEntry>()
 
         private val httpClient by lazy {
             OkHttpClient.Builder()

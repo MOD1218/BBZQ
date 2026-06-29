@@ -161,6 +161,8 @@ object ModuleSettings {
     private var knownBottomBarItemsCache: Set<String>? = null
     @Volatile
     private var knownHomeRecommendTabsCache: Set<String>? = null
+    @Volatile
+    private var knownHomeComponentsCache: Set<String>? = null
 
     enum class ExportableValueType {
         BOOLEAN,
@@ -439,7 +441,13 @@ object ModuleSettings {
         prefs.getStringSet(KEY_HIDDEN_HOME_COMPONENTS, emptySet()) ?: emptySet()
 
     fun getKnownHomeComponents(prefs: SharedPreferences): Set<String> =
-        prefs.getStringSet(KEY_KNOWN_HOME_COMPONENTS, emptySet()) ?: emptySet()
+        knownHomeComponentsCache
+            ?: prefs.getStringSet(KEY_KNOWN_HOME_COMPONENTS, emptySet())
+            ?: emptySet()
+
+    fun cacheKnownHomeComponents(items: Set<String>) {
+        knownHomeComponentsCache = items.toSet()
+    }
 
     fun isPurifyStoryVideoAdEnabled(prefs: SharedPreferences): Boolean =
         prefs.getBoolean(KEY_PURIFY_STORY_VIDEO_AD_ENABLED, false)

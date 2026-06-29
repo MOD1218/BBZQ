@@ -1,8 +1,6 @@
 package io.github.bbzq.feats.hook
 
 import android.graphics.Canvas
-import android.os.Handler
-import android.os.Looper
 import android.view.View
 import android.widget.ProgressBar
 import io.github.bbzq.ModuleSettings
@@ -21,6 +19,7 @@ import java.lang.reflect.Proxy
 import java.util.Collections
 import java.util.WeakHashMap
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.roundToLong
 
 class SkipVideoAdProgressHook(env: RoamingEnv) : BaseRoamingHook(env) {
     private val noArgMethods = ConcurrentHashMap<String, Method>()
@@ -31,7 +30,6 @@ class SkipVideoAdProgressHook(env: RoamingEnv) : BaseRoamingHook(env) {
     private val missingPlayerContainerFields = ConcurrentHashMap.newKeySet<Class<*>>()
     private val directorObservers = Collections.synchronizedMap(WeakHashMap<Any, Any>())
     private val hookedProgressDrawMethods = ConcurrentHashMap.newKeySet<String>()
-    private val pendingStorySegmentRequests = ConcurrentHashMap.newKeySet<String>()
     private val reflectionFailureLogs = ConcurrentHashMap.newKeySet<String>()
 
     private var restoredSymbols: RestoredSkipVideoAdProgressSymbols? = null
@@ -41,8 +39,6 @@ class SkipVideoAdProgressHook(env: RoamingEnv) : BaseRoamingHook(env) {
         runCatching { Class.forName(VIDEO_DIRECTOR_OBSERVER_CLASS, false, classLoader) }
             .getOrNull()
     }
-    private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
-
     override fun startHook() {
         if (env.processName != env.packageName) return
         ModuleSettings.refreshSkipVideoAdCache(prefs)
@@ -89,7 +85,7 @@ class SkipVideoAdProgressHook(env: RoamingEnv) : BaseRoamingHook(env) {
             count += runCatching {
                 env.hookAfter(method) { param ->
                     runCatching {
-                        bindStoryView(param.thisObject as? ProgressBar, requestSegments = true)
+                        bindStoryView(param.thisObject as? ProgressBar, requestSegments = false)
                     }.onFailure {
                         log("SkipVideoAdProgress story bind failed at ${method.name}", it)
                     }
@@ -143,14 +139,15 @@ class SkipVideoAdProgressHook(env: RoamingEnv) : BaseRoamingHook(env) {
             segments = segments,
             colorForCategory = ::colorFor,
         )
+        SkipVideoAdState.markSegmentsDrawn(state.key, progressBar.markerDetectionPositionMs(durationMs))
     }
 
     private fun resolveMarkerState(progressBar: ProgressBar): SkipVideoAdState.TimelineMarkerState? {
         return when {
             isStorySeekBar(progressBar) -> bindStoryView(progressBar, requestSegments = true)
-            isInlineProgressView(progressBar) -> bindInlineProgressView(progressBar, requestSegments = false)
+            isInlineProgressView(progressBar) -> bindInlineProgressView(progressBar, requestSegments = true)
             isPlayerSeekView(progressBar) -> bindPlayerSeekView(progressBar, requestSegments = true)
-            else -> stateForViewOrActive(progressBar)
+            else -> SkipVideoAdState.stateForView(progressBar)
         }
     }
 
@@ -165,21 +162,22 @@ class SkipVideoAdProgressHook(env: RoamingEnv) : BaseRoamingHook(env) {
         val identity = resolveIdentityFromDirectors(directors)
         val key = identity?.let(SkipVideoAdState::activateVideo)
             ?: SkipVideoAdState.keyForController(controller)
-            ?: return stateForViewOrActive(progressBar)
+            ?: return null
 
-        SkipVideoAdState.bindView(progressBar, key)
         SkipVideoAdState.bindController(controller, key)
-        if (controller != null) {
+        val durationMs = if (controller != null) {
             updateDurationFromController(key, controller)
         } else {
             progressBar.playerSeekDurationMs()?.let { durationMs ->
                 SkipVideoAdState.updateDuration(key, durationMs)
+                durationMs
             }
         }
-        if (requestSegments && identity != null) {
-            requestSegmentsIfMissing(identity)
+        if (requestSegments && identity != null && durationMs != null && durationMs > 0L) {
+            return bindProgressSegments(progressBar, identity, durationMs, listOf(controller), delayMs = 0L)
         }
-        return stateForViewOrActive(progressBar)
+        SkipVideoAdState.bindView(progressBar, key)
+        return SkipVideoAdState.stateForKey(key)
     }
 
     private fun bindInlineProgressView(
@@ -187,19 +185,19 @@ class SkipVideoAdProgressHook(env: RoamingEnv) : BaseRoamingHook(env) {
         requestSegments: Boolean,
     ): SkipVideoAdState.TimelineMarkerState? {
         if (progressBar == null) return null
-        val controller = resolveInlinePlayerContext(progressBar) ?: return stateForViewOrActive(progressBar)
+        val controller = resolveInlinePlayerContext(progressBar) ?: return null
         val identity = resolveIdentityFromPlayableParams(controller.callNoArg("getCurrentPlayableParams"))
         val key = identity?.let(SkipVideoAdState::activateVideo)
             ?: SkipVideoAdState.keyForController(controller)
-            ?: return stateForViewOrActive(progressBar)
+            ?: return null
 
         SkipVideoAdState.bindController(controller, key)
-        SkipVideoAdState.bindView(progressBar, key)
-        updateDurationFromController(key, controller)
-        if (requestSegments && identity != null) {
-            requestSegmentsIfMissing(identity)
+        val durationMs = updateDurationFromController(key, controller)
+        if (requestSegments && identity != null && durationMs != null && durationMs > 0L) {
+            return bindProgressSegments(progressBar, identity, durationMs, listOf(controller), delayMs = 0L)
         }
-        return stateForViewOrActive(progressBar)
+        SkipVideoAdState.bindView(progressBar, key)
+        return SkipVideoAdState.stateForKey(key)
     }
 
     private fun bindStoryView(
@@ -207,66 +205,61 @@ class SkipVideoAdProgressHook(env: RoamingEnv) : BaseRoamingHook(env) {
         requestSegments: Boolean,
     ): SkipVideoAdState.TimelineMarkerState? {
         if (progressBar == null) return null
-        val controller = resolveStoryController(progressBar) ?: return stateForViewOrActive(progressBar)
+        val controller = resolveStoryController(progressBar) ?: return null
         val player = controller.callNoArg("getPlayer")
         val detail = controller.callNoArg("getData")
         val identity = resolveIdentityFromStoryPlayer(player)
             ?: detail?.let(::resolveIdentityFromDetail)
-            ?: return stateForViewOrActive(progressBar)
+            ?: return null
         val key = SkipVideoAdState.activateVideo(identity)
 
         SkipVideoAdState.bindController(controller, key)
         if (player != null) {
             SkipVideoAdState.bindController(player, key)
         }
-        SkipVideoAdState.bindView(progressBar, key)
 
         val durationMs = resolveStoryDurationMs(player, progressBar, detail, key)
-        SkipVideoAdState.updateDuration(key, durationMs)
-        if (requestSegments) {
-            requestStorySegmentsIfMissing(identity)
+        if (requestSegments && durationMs > 0L) {
+            return bindProgressSegments(
+                progressBar,
+                identity,
+                durationMs,
+                listOf(controller, player),
+                delayMs = storySegmentRequestDelayMs(progressBar),
+            )
         }
-        return stateForViewOrActive(progressBar)
+        SkipVideoAdState.bindView(progressBar, key)
+        SkipVideoAdState.updateDuration(key, durationMs)
+        return SkipVideoAdState.stateForKey(key)
     }
 
-    private fun stateForViewOrActive(progressBar: ProgressBar): SkipVideoAdState.TimelineMarkerState? {
-        SkipVideoAdState.stateForView(progressBar)?.let { return it }
-        val durationMs = progressBar.max.takeIf { it > 0 }?.toLong() ?: 0L
-        val state = SkipVideoAdState.activeStateForDuration(durationMs) ?: return null
-        SkipVideoAdState.bindView(progressBar, state.key)
-        return state
-    }
-
-    private fun requestSegmentsIfMissing(identity: SkipVideoAdState.VideoIdentity) {
+    private fun bindProgressSegments(
+        progressBar: ProgressBar,
+        identity: SkipVideoAdState.VideoIdentity,
+        durationMs: Long,
+        controllers: List<Any?>,
+        delayMs: Long,
+    ): SkipVideoAdState.TimelineMarkerState? {
         val config = ModuleSettings.getSkipVideoAdCache(prefs)
-        if (!config.enabled) return
-        SkipVideoAdState.requestSegmentsIfMissing(identity, config.enabledCategories) { message, throwable ->
+        if (!config.enabled) return SkipVideoAdState.stateForKey(identity.key)
+        return SkipVideoAdState.requestSegmentsAfterProgress(
+            view = progressBar,
+            controllers = controllers,
+            identity = identity,
+            durationMs = durationMs,
+            enabledCategories = config.enabledCategories,
+            delayMs = delayMs,
+        ) { message, throwable ->
             log(message, throwable)
         }
     }
 
-    private fun requestStorySegmentsIfMissing(identity: SkipVideoAdState.VideoIdentity) {
-        val config = ModuleSettings.getSkipVideoAdCache(prefs)
-        if (!config.enabled) return
-        if (!SkipVideoAdState.shouldRequestSegments(identity, config.enabledCategories)) return
-        if (!pendingStorySegmentRequests.add(identity.key)) return
-
-        mainHandler.postDelayed(
-            {
-                pendingStorySegmentRequests.remove(identity.key)
-                if (ModuleSettings.refreshSkipVideoAdCache(prefs).enabled) {
-                    requestSegmentsIfMissing(identity)
-                }
-            },
-            STORY_SEGMENT_REQUEST_DELAY_MS,
-        )
-    }
-
-    private fun updateDurationFromController(key: String, controller: Any) {
+    private fun updateDurationFromController(key: String, controller: Any): Long? {
         val duration = controller.callNoArg("getDuration").asLong()
             ?: controller.callNoArg("getRealDuration").asLong()
-            ?: return
+            ?: return null
         SkipVideoAdState.updateDuration(key, duration)
+        return duration
     }
 
     private fun durationForDrawing(
@@ -372,8 +365,9 @@ class SkipVideoAdProgressHook(env: RoamingEnv) : BaseRoamingHook(env) {
             else -> args?.firstOrNull()
         }
         val identity = resolveIdentityFromPlayableParams(params) ?: return
-        SkipVideoAdState.activateVideo(identity)
-        requestSegmentsIfMissing(identity)
+        if (methodName != "onItemWillChange") {
+            SkipVideoAdState.activateVideo(identity)
+        }
     }
 
     private fun currentDirectors(container: Any): List<Any> {
@@ -545,6 +539,21 @@ class SkipVideoAdProgressHook(env: RoamingEnv) : BaseRoamingHook(env) {
             (name.endsWith(".StorySeekBar") && ".video.story." in name)
     }
 
+    private fun storySegmentRequestDelayMs(view: View): Long =
+        if (isStoryFeedProgressView(view)) STORY_SEGMENT_REQUEST_DELAY_MS else 0L
+
+    private fun isStoryFeedProgressView(view: View): Boolean {
+        var parent = view.parent
+        while (parent is View) {
+            val name = parent.javaClass.name
+            if (name == STORY_VIEW_PAGER_WRAPPER_CLASS || name.endsWith(".StoryViewPagerWrapper")) {
+                return true
+            }
+            parent = parent.parent
+        }
+        return false
+    }
+
     private fun isSupportedProgressView(view: ProgressBar): Boolean =
         isPlayerSeekView(view) || isStorySeekBar(view) || isInlineProgressView(view)
 
@@ -572,10 +581,34 @@ class SkipVideoAdProgressHook(env: RoamingEnv) : BaseRoamingHook(env) {
     private fun ProgressBar.playerSeekDurationMs(): Long? =
         maxDurationMs()?.takeIf { it >= MIN_PLAYER_SEEK_DURATION_MS }
 
+    private fun ProgressBar.currentPositionMs(durationMs: Long): Long {
+        val maxValue = max.takeIf { it > 0 } ?: return 0L
+        if (durationMs <= 0L) return 0L
+        val progressValue = progress.coerceIn(0, maxValue)
+        return (progressValue.toDouble() / maxValue.toDouble() * durationMs)
+            .roundToLong()
+            .coerceIn(0L, durationMs)
+    }
+
+    private fun ProgressBar.markerDetectionPositionMs(durationMs: Long): Long {
+        if (isStorySeekBar(this)) {
+            return storyPlayerPositionMs(durationMs) ?: 0L
+        }
+        return currentPositionMs(durationMs)
+    }
+
+    private fun ProgressBar.storyPlayerPositionMs(durationMs: Long): Long? {
+        val player = resolveStoryController(this)?.callNoArg("getPlayer") ?: return null
+        val position = player.callNoArg("getCurrentPosition").asLong()?.takeIf { it > 0L } ?: return null
+        if (durationMs > 0L && position > durationMs) return null
+        return position
+    }
+
     private companion object {
         private const val PLAYER_CONTAINER_CLASS = "tv.danmaku.biliplayerv2.PlayerContainer"
         private const val PLAYER_SEEK_WIDGET_CLASS = "com.bilibili.playerbizcommonv2.widget.seek.v3.PlayerSeekWidget3"
         private const val STORY_SEEK_BAR_CLASS = "com.bilibili.video.story.view.StorySeekBar"
+        private const val STORY_VIEW_PAGER_WRAPPER_CLASS = "com.bilibili.video.story.StoryViewPagerWrapper"
         private const val VIDEO_DIRECTOR_OBSERVER_CLASS = "tv.danmaku.biliplayerv2.service.VideoDirectorObserver"
         private const val STORY_DETAIL_DURATION_SCALE = 1000L
         private const val STORY_SEGMENT_REQUEST_DELAY_MS = 3000L

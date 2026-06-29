@@ -87,6 +87,7 @@ class SettingHook(env: RoamingEnv) : BaseRoamingHook(env) {
             xposedFrameworkVersion = runCatching { xposed.frameworkVersion }.getOrDefault("unknown"),
             xposedFrameworkVersionCode = runCatching { xposed.frameworkVersionCode.toString() }.getOrDefault("unknown"),
             xposedFrameworkProperties = runCatching { xposed.frameworkProperties.toString() }.getOrDefault("unknown"),
+            observedPrefs = prefs,
         )
 
     private fun resolveAnchorOrder(fragment: Any): Int? {

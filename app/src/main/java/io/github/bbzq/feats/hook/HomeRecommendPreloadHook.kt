@@ -29,7 +29,7 @@ class HomeRecommendPreloadHook(env: RoamingEnv) : BaseRoamingHook(env) {
         if (env.processName != env.packageName) return
         val enabled = ModuleSettings.isHomeRecommendPreloadEnabled(prefs)
         if (!enabled) {
-            log("startHook: HomeRecommendPreload disabled, provider=${ModuleSettingsBridge.lastProviderStatus}")
+            log("startHook: HomeRecommendPreload disabled, settings=${ModuleSettingsBridge.lastStatus}")
             return
         }
 

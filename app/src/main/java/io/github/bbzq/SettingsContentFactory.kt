@@ -1148,7 +1148,7 @@ class SettingsContentFactory(
             setPadding(dp(10), dp(8), dp(10), dp(8))
             items.forEach { item ->
                 addView(CheckBox(context).apply {
-                    text = if (item.uri.isBlank()) item.name else "${item.name}\n${item.uri}"
+                    text = item.name
                     textSize = 14f
                     setTextColor(TITLE_COLOR)
                     setPadding(dp(6), dp(2), dp(6), dp(2))
@@ -1552,7 +1552,7 @@ class SettingsContentFactory(
     }
 
     private fun bottomBarItems(): List<BottomBarItem> =
-        ModuleSettings.getKnownBottomBarItems(prefs)
+        ModuleSettings.refreshKnownBottomBarItemsCache(prefs)
             .mapNotNull(::parseBottomBarItem)
             .distinctBy(BottomBarItem::id)
             .sortedBy(BottomBarItem::order)
@@ -1611,13 +1611,25 @@ class SettingsContentFactory(
         val parts = raw.split('\t', limit = 4)
         if (parts.size == 4) {
             val order = parts[0].toIntOrNull() ?: return null
+            if (parts[1].isBlank() || !isBottomBarName(parts[2])) return null
             return BottomBarItem(order, parts[1], parts[2], parts[3])
         }
         if (parts.size == 3) {
+            if (parts[0].isBlank() || !isBottomBarName(parts[1])) return null
             return BottomBarItem(Int.MAX_VALUE, parts[0], parts[1], parts[2])
         }
         return null
     }
+
+    private fun isBottomBarName(value: String): Boolean =
+        value.isNotBlank() && !looksLikeBottomBarUri(value)
+
+    private fun looksLikeBottomBarUri(value: String): Boolean =
+        "://" in value ||
+            value.startsWith("bilibili://", ignoreCase = true) ||
+            value.startsWith("activity://", ignoreCase = true) ||
+            value.startsWith("http://", ignoreCase = true) ||
+            value.startsWith("https://", ignoreCase = true)
 
     private fun parseHomeRecommendTabItem(raw: String): HomeRecommendTabItem? {
         val parts = raw.split('\t', limit = 5)

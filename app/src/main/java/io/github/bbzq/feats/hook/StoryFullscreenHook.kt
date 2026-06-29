@@ -21,7 +21,7 @@ class StoryFullscreenHook(env: RoamingEnv) : BaseRoamingHook(env) {
     override fun startHook() {
         if (env.processName != env.packageName) return
         if (!ModuleSettings.isStoryVideoImmersiveFullscreenEnabled(prefs)) {
-            log("startHook: StoryFullscreen disabled, provider=${ModuleSettingsBridge.lastProviderStatus}")
+            log("startHook: StoryFullscreen disabled, settings=${ModuleSettingsBridge.lastStatus}")
             return
         }
 

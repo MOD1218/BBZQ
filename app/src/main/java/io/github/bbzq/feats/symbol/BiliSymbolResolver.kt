@@ -14,7 +14,6 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import io.github.bbzq.BuildConfig
 import io.github.bbzq.ModuleSettings
-import io.github.bbzq.ModuleSettingsBridge
 import io.github.bbzq.feats.allFields
 import io.github.bbzq.feats.allMethods
 import io.github.bbzq.feats.symbol.dexkit.DexKitBridgeProvider
@@ -32,7 +31,8 @@ import java.lang.reflect.Modifier
 import kotlin.coroutines.Continuation
 
 object BiliSymbolResolver {
-    private const val PREFS_NAME = "bbzq_symbol_cache"
+    const val CACHE_PREFS_NAME = "bbzq_symbol_cache"
+    private const val PREFS_NAME = CACHE_PREFS_NAME
     private const val KEY_FINGERPRINT = "fingerprint"
     private const val KEY_SYMBOLS = "symbols"
 
@@ -169,7 +169,7 @@ object BiliSymbolResolver {
         memorySymbols = scanned
         log("BiliSymbolResolver scan done fp=$fingerprint", null)
         scanned.formatStatusLines().forEach { line -> log(line, null) }
-        publishStatus(scanned, "scan", log)
+        publishStatus(prefs, scanned, log)
         return scanned
     }
 
@@ -194,7 +194,7 @@ object BiliSymbolResolver {
         memorySymbols = scanned
         log("BiliSymbolResolver force scan done fp=$fingerprint", null)
         scanned.formatStatusLines().forEach { line -> log(line, null) }
-        publishStatus(scanned, "force-scan", log)
+        publishStatus(prefs, scanned, log)
         return scanned
     }
 
@@ -3144,16 +3144,19 @@ object BiliSymbolResolver {
         log: (String, Throwable?) -> Unit,
     ) {
         runCatching {
-            prefs.edit()
+            val committed = prefs.edit()
                 .putString(KEY_FINGERPRINT, fingerprint)
                 .putString(KEY_SYMBOLS, symbols.toJson().toString())
-                .apply()
+                .commit()
+            if (!committed) {
+                log("BiliSymbolResolver cache write failed: commit returned false", null)
+            }
         }.onFailure { log("BiliSymbolResolver cache write failed", it) }
     }
 
     private fun publishStatus(
+        prefs: SharedPreferences,
         symbols: BiliHookSymbols,
-        source: String,
         log: (String, Throwable?) -> Unit,
     ) {
         runCatching {
@@ -3161,18 +3164,16 @@ object BiliSymbolResolver {
             val notFoundPreview = notFound.take(3).joinToString { it.id.substringAfterLast('.') }
             val summary = when {
                 notFound.isEmpty() && symbols.scanErrors.isEmpty() ->
-                    "当前扫描结果：未发现缺失方法（$source）"
+                    "当前扫描结果：未发现缺失方法"
                 symbols.scanErrors.isEmpty() ->
-                    "当前扫描结果：${notFound.size} 个 HookPoint 异常（$source）${
+                    "当前扫描结果：${notFound.size} 个 HookPoint 异常${
                         if (notFoundPreview.isBlank()) "" else "：$notFoundPreview"
                     }"
                 else ->
-                    "当前扫描结果：${notFound.size} 个 HookPoint 异常，${symbols.scanErrors.size} 个扫描错误（$source）"
+                    "当前扫描结果：${notFound.size} 个 HookPoint 异常，${symbols.scanErrors.size} 个扫描错误"
             }
             val report = buildString {
-                appendLine("来源：$source")
                 appendLine("缓存指纹：${symbols.fingerprint}")
-                appendLine("schema=${symbols.cacheSchemaVersion}, rule=${symbols.dexKitRuleVersion}")
                 if (notFound.isEmpty()) {
                     appendLine("未发现异常 HookPoint。")
                 } else {
@@ -3190,13 +3191,13 @@ object BiliSymbolResolver {
                 }
             }.trim()
 
-            val editor = ModuleSettingsBridge.instance.edit()
+            val editor = prefs.edit()
                 .putString(ModuleSettings.KEY_SYMBOL_SCAN_STATUS_SUMMARY, summary)
                 .putString(ModuleSettings.KEY_SYMBOL_SCAN_STATUS_REPORT, report)
-            if (source == "scan" || source == "force-scan") {
-                editor.putString(ModuleSettings.KEY_SYMBOL_SCAN_STATUS_UPDATED_AT, System.currentTimeMillis().toString())
+                .putString(ModuleSettings.KEY_SYMBOL_SCAN_STATUS_UPDATED_AT, System.currentTimeMillis().toString())
+            if (!editor.commit()) {
+                log("BiliSymbolResolver publish status failed: commit returned false", null)
             }
-            editor.apply()
         }.onFailure {
             log("BiliSymbolResolver publish status failed", it)
         }
@@ -3216,11 +3217,9 @@ object BiliSymbolResolver {
                 source.length().toString(),
                 source.lastModified().toString(),
                 BuildConfig.VERSION_CODE.toString(),
-                BiliHookSymbols.CACHE_SCHEMA_VERSION.toString(),
-                DexKitRuleVersions.CURRENT.toString(),
             ).joinToString("|")
         } catch (_: Throwable) {
-            "unknown|${BuildConfig.VERSION_CODE}|${BiliHookSymbols.CACHE_SCHEMA_VERSION}|${DexKitRuleVersions.CURRENT}"
+            "unknown|${BuildConfig.VERSION_CODE}"
         }
     }
 

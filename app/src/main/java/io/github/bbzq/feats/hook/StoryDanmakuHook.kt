@@ -12,7 +12,7 @@ class StoryDanmakuHook(env: RoamingEnv) : BaseRoamingHook(env) {
     override fun startHook() {
         if (env.processName != env.packageName) return
         if (!ModuleSettings.isStoryVideoKeepDanmakuOnCommentEnabled(prefs)) {
-            log("startHook: StoryDanmaku disabled, provider=${ModuleSettingsBridge.lastProviderStatus}")
+            log("startHook: StoryDanmaku disabled, settings=${ModuleSettingsBridge.lastStatus}")
             return
         }
 

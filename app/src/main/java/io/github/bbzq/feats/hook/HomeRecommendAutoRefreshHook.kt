@@ -14,7 +14,7 @@ class HomeRecommendAutoRefreshHook(env: RoamingEnv) : BaseRoamingHook(env) {
         if (env.processName != env.packageName) return
         val enabled = ModuleSettings.isBlockHomeRecommendAutoRefreshEnabled(prefs)
         if (!enabled) {
-            log("startHook: HomeRecommendAutoRefresh disabled, provider=${ModuleSettingsBridge.lastProviderStatus}")
+            log("startHook: HomeRecommendAutoRefresh disabled, settings=${ModuleSettingsBridge.lastStatus}")
             return
         }
 

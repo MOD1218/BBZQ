@@ -150,6 +150,7 @@ class HomeComponentHideHook(env: io.github.bbzq.feats.RoamingEnv) : BaseRoamingH
         val encoded = knownComponents.entries.mapIndexed { index, entry ->
             encodeComponent(index, entry.value, entry.key)
         }.toMutableSet()
+        ModuleSettings.cacheKnownHomeComponents(encoded)
         prefs.edit()
             .putStringSet(ModuleSettings.KEY_KNOWN_HOME_COMPONENTS, encoded)
             .apply()

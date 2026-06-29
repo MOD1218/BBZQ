@@ -18,7 +18,7 @@ class StoryPlayerAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
         if (env.processName != env.packageName) return
         val enabled = ModuleSettings.isPurifyStoryVideoAdEnabled(prefs)
         if (!enabled) {
-            log("startHook: StoryPlayerAd disabled, provider=${ModuleSettingsBridge.lastProviderStatus}")
+            log("startHook: StoryPlayerAd disabled, settings=${ModuleSettingsBridge.lastStatus}")
             return
         }
 

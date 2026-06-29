@@ -7,6 +7,7 @@ import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import io.github.bbzq.feats.symbol.BiliSymbolResolver
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -91,6 +92,7 @@ object RuntimeEnvironmentInfo {
         xposedFrameworkVersion: String,
         xposedFrameworkVersionCode: String,
         xposedFrameworkProperties: String,
+        observedPrefs: SharedPreferences? = null,
     ): Bundle {
         return Bundle().apply {
             runtimeSnapshotValues(
@@ -102,16 +104,32 @@ object RuntimeEnvironmentInfo {
                 xposedFrameworkVersionCode = xposedFrameworkVersionCode,
                 xposedFrameworkProperties = xposedFrameworkProperties,
             ).forEach { (key, value) -> putString(key, value) }
+            runtimeObservedStringSets(observedPrefs).forEach { (key, value) ->
+                putStringArrayList(key, ArrayList(value))
+            }
         }
     }
 
     fun applyRuntimeSnapshotFromIntent(intent: Intent?, prefs: SharedPreferences): Boolean {
         val values = intent?.getBundleExtra(EXTRA_RUNTIME_VALUES) ?: return false
         val editor = prefs.edit()
+        var changed = false
         values.keySet().forEach { key ->
-            editor.putString(key, values.getString(key))
+            if (key in OBSERVED_STRING_SET_KEYS) {
+                val items = values.getStringArrayList(key)
+                    ?.filterTo(linkedSetOf()) { it.isNotBlank() }
+                    .orEmpty()
+                if (items.isNotEmpty()) {
+                    putObservedStringSet(editor, prefs, key, items)
+                    changed = true
+                }
+            } else {
+                val value = values.getString(key) ?: return@forEach
+                editor.putString(key, value)
+                changed = true
+            }
         }
-        return editor.commit()
+        return changed && editor.commit()
     }
 
     private fun resolveHostVersion(context: Context, prefs: SharedPreferences): VersionInfo {
@@ -161,12 +179,43 @@ object RuntimeEnvironmentInfo {
             ModuleSettings.KEY_RUNTIME_PROCESS_NAME to processName.ifBlank { UNKNOWN },
             ModuleSettings.KEY_RUNTIME_LAST_UPDATE_TIME to System.currentTimeMillis().toString(),
         ).apply {
-            putAll(scanStatusSnapshotValues(hostContext))
+            putAll(symbolScanStatusValues(hostContext))
         }
     }
 
-    private fun scanStatusSnapshotValues(hostContext: Context): Map<String, String> {
-        val prefs = hostContext.getSharedPreferences(ModuleSettingsBridge.HOST_SNAPSHOT_PREFS_NAME, Context.MODE_PRIVATE)
+    private fun runtimeObservedStringSets(prefs: SharedPreferences?): Map<String, Set<String>> {
+        if (prefs == null) return emptyMap()
+        return buildMap {
+            ModuleSettings.getKnownBottomBarItems(prefs)
+                .takeIf { it.isNotEmpty() }
+                ?.let { put(ModuleSettings.KEY_KNOWN_BOTTOM_BAR_ITEMS, it) }
+            ModuleSettings.getKnownHomeRecommendTabs(prefs)
+                .takeIf { it.isNotEmpty() }
+                ?.let { put(ModuleSettings.KEY_KNOWN_HOME_RECOMMEND_TABS, it) }
+            ModuleSettings.getKnownHomeComponents(prefs)
+                .takeIf { it.isNotEmpty() }
+                ?.let { put(ModuleSettings.KEY_KNOWN_HOME_COMPONENTS, it) }
+        }
+    }
+
+    private fun putObservedStringSet(
+        editor: SharedPreferences.Editor,
+        prefs: SharedPreferences,
+        key: String,
+        items: Set<String>,
+    ) {
+        val localItems = prefs.getStringSet(key, emptySet()).orEmpty()
+        val updated = if (items.size < localItems.size) localItems else items
+        editor.putStringSet(key, updated.toMutableSet())
+        when (key) {
+            ModuleSettings.KEY_KNOWN_BOTTOM_BAR_ITEMS -> ModuleSettings.cacheKnownBottomBarItems(updated)
+            ModuleSettings.KEY_KNOWN_HOME_RECOMMEND_TABS -> ModuleSettings.cacheKnownHomeRecommendTabs(updated)
+            ModuleSettings.KEY_KNOWN_HOME_COMPONENTS -> ModuleSettings.cacheKnownHomeComponents(updated)
+        }
+    }
+
+    private fun symbolScanStatusValues(hostContext: Context): Map<String, String> {
+        val prefs = hostContext.getSharedPreferences(BiliSymbolResolver.CACHE_PREFS_NAME, Context.MODE_PRIVATE)
         return listOf(
             ModuleSettings.KEY_SYMBOL_SCAN_STATUS_SUMMARY,
             ModuleSettings.KEY_SYMBOL_SCAN_STATUS_REPORT,
@@ -267,6 +316,12 @@ object RuntimeEnvironmentInfo {
             else -> "none"
         }
     }
+
+    private val OBSERVED_STRING_SET_KEYS = setOf(
+        ModuleSettings.KEY_KNOWN_BOTTOM_BAR_ITEMS,
+        ModuleSettings.KEY_KNOWN_HOME_RECOMMEND_TABS,
+        ModuleSettings.KEY_KNOWN_HOME_COMPONENTS,
+    )
 
     private data class VersionInfo(
         val packageName: String,

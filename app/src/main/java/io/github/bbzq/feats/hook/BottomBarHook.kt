@@ -1,15 +1,26 @@
 package io.github.bbzq.feats.hook
 
+import android.os.Handler
+import android.os.Looper
 import io.github.bbzq.ModuleSettings
 import io.github.bbzq.feats.BaseRoamingHook
 import io.github.bbzq.feats.RoamingEnv
 import io.github.bbzq.feats.allFields
 import io.github.bbzq.feats.hookAfter
 import io.github.bbzq.feats.hookBefore
+import org.json.JSONObject
 
 class BottomBarHook(env: RoamingEnv) : BaseRoamingHook(env) {
+    private var cachedBottomEntriesLoaded = false
+    private var cacheReaderFailureLogged = false
+
     override fun startHook() {
         ModuleSettings.refreshKnownBottomBarItemsCache(prefs)
+        saveCachedBottomEntries()
+        Handler(Looper.getMainLooper()).postDelayed(
+            { saveCachedBottomEntries() },
+            HOME_TAB_CACHE_READ_DELAY_MS,
+        )
         val symbols = env.symbols?.bottomBar?.restore(classLoader)
         val tabHostSetTabsMethods = symbols?.tabHostSetTabsMethods.orEmpty()
         val tabHostGetTabsMethods = symbols?.tabHostGetTabsMethods.orEmpty()
@@ -34,16 +45,24 @@ class BottomBarHook(env: RoamingEnv) : BaseRoamingHook(env) {
         baseOnViewCreatedMethods.forEach { method ->
             env.hookAfter(method) { param ->
                 runCatching {
-                    val host = param.thisObject?.findTabHost(tabHostClass) ?: return@runCatching
+                    val fragment = param.thisObject ?: return@runCatching
+                    saveCachedBottomEntries()
+                    fragment.extractSourceBottomEntries()
+                        .takeIf { it.isNotEmpty() }
+                        ?.let { entries ->
+                            saveKnownEntries(
+                                entries,
+                                preserveMissing = shouldPreserveMissing(entries.map(BottomBarEntry::id)),
+                            )
+                        }
+                    val host = fragment.findTabHost(tabHostClass) ?: return@runCatching
                     val getTabs = tabHostGetTabsMethods.firstOrNull { it.declaringClass.isInstance(host) }
                         ?: return@runCatching
                     val setTabs = tabHostSetTabsMethods.firstOrNull { it.declaringClass.isInstance(host) }
                         ?: return@runCatching
                     val tabs = getTabs.invoke(host) as? List<*> ?: return@runCatching
-                    val updated = tabs.toMutableList()
-                    val originalSize = updated.size
-                    dispatch(updated)
-                    if (updated.size != originalSize) {
+                    val updated = dispatch(tabs)
+                    if (updated != null && updated.size != tabs.size) {
                         setTabs.invoke(host, updated)
                     }
                 }.onFailure {
@@ -60,26 +79,65 @@ class BottomBarHook(env: RoamingEnv) : BaseRoamingHook(env) {
         }
     }
 
-    @Suppress("UNCHECKED_CAST")
     private fun dispatch(tabs: List<*>): List<*>? {
-        val bottom = tabs as? MutableList<Any?> ?: tabs.toMutableList() as MutableList<Any?>
+        saveCachedBottomEntries()
         val hiddenIds = ModuleSettings.getHiddenBottomBarItems(prefs)
         val enabled = ModuleSettings.isCustomBottomBarEnabled(prefs)
         val knownItems = linkedSetOf<String>()
+        val observedIds = linkedSetOf<String>()
+        val filtered = if (enabled && hiddenIds.isNotEmpty()) ArrayList<Any?>(tabs.size) else null
+        var removed = false
 
-        val changed = bottom.removeAll { item ->
-            val entry = item?.extractBottomEntry() ?: return@removeAll false
+        tabs.forEach { item ->
+            val entry = item?.extractBottomEntry()
+            if (entry == null) {
+                filtered?.add(item)
+                return@forEach
+            }
+            observedIds += entry.id
             knownItems += encodeBottomItem(
                 order = knownItems.size,
                 id = entry.id,
                 name = entry.name,
                 uri = entry.uri,
             )
-            enabled && entry.id in hiddenIds
+            if (filtered != null && entry.id in hiddenIds) {
+                removed = true
+            } else {
+                filtered?.add(item)
+            }
         }
 
-        saveKnownItems(knownItems)
-        return if (changed) bottom else null
+        saveKnownItems(knownItems, preserveMissing = hiddenIds.any { it !in observedIds })
+        return if (removed) filtered else null
+    }
+
+    private fun saveCachedBottomEntries() {
+        if (cachedBottomEntriesLoaded) return
+        runCatching {
+            val file = env.hostContext.filesDir.resolve(HOME_TAB_CACHE_FILE)
+            if (!file.isFile) return
+            val bottom = JSONObject(file.readText()).optJSONObject("data")?.optJSONArray("bottom") ?: return
+            val entries = ArrayList<BottomBarEntry>(bottom.length())
+            for (index in 0 until bottom.length()) {
+                val item = bottom.optJSONObject(index) ?: continue
+                val id = item.optString("id").trim()
+                val name = item.optString("name").trim()
+                val uri = item.optString("uri").trim()
+                if (id.isNotBlank() && name.isNotBlank()) {
+                    entries += BottomBarEntry(id, name, uri)
+                }
+            }
+            if (entries.size >= MIN_BOTTOM_BAR_ITEMS) {
+                saveKnownEntries(entries, preserveMissing = false)
+                cachedBottomEntriesLoaded = true
+            }
+        }.onFailure {
+            if (!cacheReaderFailureLogged) {
+                cacheReaderFailureLogged = true
+                log("Bottom bar cache reader failed", it)
+            }
+        }
     }
 
     private fun Any.extractBottomEntry(): BottomBarEntry? {
@@ -92,16 +150,42 @@ class BottomBarHook(env: RoamingEnv) : BaseRoamingHook(env) {
 
         val guessedUri = strings.firstOrNull(::looksLikeUri)
         val guessedName = strings.firstOrNull(::looksLikeDisplayName)
-            ?: strings.firstOrNull { it != guessedUri && it.length > 1 }
         val guessedId = strings.firstOrNull { it != guessedUri && it != guessedName && looksLikeAsciiId(it) }
             ?: strings.firstOrNull { it != guessedUri && it != guessedName && looksLikeBottomBarId(it) }
             ?: strings.firstOrNull { it != guessedUri && it != guessedName }
 
         if (guessedId == null && guessedName == null && guessedUri == null) return null
         val resolvedId = guessedId ?: guessedName ?: guessedUri ?: return null
-        val resolvedName = guessedName ?: guessedId ?: guessedUri ?: resolvedId
+        val resolvedName = guessedName ?: return null
         return BottomBarEntry(resolvedId, resolvedName, guessedUri.orEmpty())
     }
+
+    private fun Any.extractSourceBottomEntries(): List<BottomBarEntry> =
+        javaClass.allFields()
+            .mapNotNull { field ->
+                runCatching { field.get(this) as? List<*> }.getOrNull()
+            }
+            .mapNotNull { list ->
+                list.mapNotNull { item -> item?.extractBottomEntryDeep() }
+                    .takeIf { entries ->
+                        entries.size == list.size &&
+                            entries.size >= MIN_BOTTOM_BAR_ITEMS &&
+                            entries.all { it.uri.isNotBlank() }
+                    }
+            }
+            .maxByOrNull { it.size }
+            .orEmpty()
+
+    private fun Any.extractBottomEntryDeep(): BottomBarEntry? =
+        extractBottomEntry()
+            ?: javaClass.allFields()
+                .mapNotNull { field ->
+                    runCatching { field.get(this) }.getOrNull()
+                }
+                .firstNotNullOfOrNull { value ->
+                    value.takeUnless { it === this || it is Collection<*> || it.javaClass.isArray }
+                        ?.extractBottomEntry()
+                }
 
     private fun Any.findTabHost(tabHostClass: Class<*>?): Any? {
         if (tabHostClass == null) return null
@@ -138,14 +222,74 @@ class BottomBarHook(env: RoamingEnv) : BaseRoamingHook(env) {
         return value.all { it.code in 0x21..0x7E }
     }
 
-    private fun saveKnownItems(items: Set<String>) {
+    private fun saveKnownEntries(entries: Collection<BottomBarEntry>, preserveMissing: Boolean) {
+        val items = entries.mapIndexedTo(linkedSetOf()) { index, entry ->
+            encodeBottomItem(
+                order = index,
+                id = entry.id,
+                name = entry.name,
+                uri = entry.uri,
+            )
+        }
+        saveKnownItems(items, preserveMissing)
+    }
+
+    private fun shouldPreserveMissing(observedIds: Collection<String>): Boolean {
+        val observed = observedIds.toSet()
+        return ModuleSettings.getHiddenBottomBarItems(prefs).any { it !in observed }
+    }
+
+    private fun saveKnownItems(items: Set<String>, preserveMissing: Boolean) {
         if (items.isEmpty()) return
         val oldItems = ModuleSettings.getKnownBottomBarItems(prefs)
-        if (oldItems == items) return
-        ModuleSettings.cacheKnownBottomBarItems(items)
+        val updatedItems = if (preserveMissing) mergeKnownItems(oldItems, items) else normalizeKnownItems(items)
+        if (oldItems == updatedItems) return
+        ModuleSettings.cacheKnownBottomBarItems(updatedItems)
         prefs.edit()
-            .putStringSet(ModuleSettings.KEY_KNOWN_BOTTOM_BAR_ITEMS, items.toMutableSet())
+            .putStringSet(ModuleSettings.KEY_KNOWN_BOTTOM_BAR_ITEMS, updatedItems.toMutableSet())
             .apply()
+    }
+
+    private fun mergeKnownItems(oldItems: Set<String>, observedItems: Set<String>): Set<String> {
+        val merged = linkedMapOf<String, KnownBottomBarItem>()
+        oldItems.mapNotNull(::decodeBottomItem).forEach { item ->
+            merged.putIfAbsent(item.id, item)
+        }
+        observedItems.mapNotNull(::decodeBottomItem).forEach { item ->
+            val oldItem = merged[item.id]
+            merged[item.id] = item.copy(order = oldItem?.order ?: item.order)
+        }
+        return encodeKnownItems(merged.values)
+    }
+
+    private fun normalizeKnownItems(items: Set<String>): Set<String> =
+        encodeKnownItems(items.mapNotNull(::decodeBottomItem))
+
+    private fun encodeKnownItems(items: Collection<KnownBottomBarItem>): Set<String> =
+        items.asSequence()
+            .filter { it.id.isNotBlank() && it.name.isNotBlank() }
+            .distinctBy(KnownBottomBarItem::id)
+            .sortedWith(compareBy<KnownBottomBarItem> { it.order }.thenBy { it.name }.thenBy { it.id })
+            .mapIndexed { index, item ->
+                encodeBottomItem(
+                    order = index,
+                    id = item.id,
+                    name = item.name,
+                    uri = item.uri,
+                )
+            }
+            .toMutableSet()
+
+    private fun decodeBottomItem(raw: String): KnownBottomBarItem? {
+        val parts = raw.split(ITEM_SEPARATOR, limit = 4)
+        if (parts.size == 4) {
+            val order = parts[0].toIntOrNull() ?: return null
+            return KnownBottomBarItem(order, parts[1], parts[2], parts[3])
+        }
+        if (parts.size == 3) {
+            return KnownBottomBarItem(Int.MAX_VALUE, parts[0], parts[1], parts[2])
+        }
+        return null
     }
 
     private fun encodeBottomItem(order: Int, id: String, name: String, uri: String): String =
@@ -163,7 +307,17 @@ class BottomBarHook(env: RoamingEnv) : BaseRoamingHook(env) {
         val uri: String,
     )
 
+    private data class KnownBottomBarItem(
+        val order: Int,
+        val id: String,
+        val name: String,
+        val uri: String,
+    )
+
     private companion object {
         private const val ITEM_SEPARATOR = "\t"
+        private const val MIN_BOTTOM_BAR_ITEMS = 3
+        private const val HOME_TAB_CACHE_FILE = "home_tab_v2.data"
+        private const val HOME_TAB_CACHE_READ_DELAY_MS = 2_000L
     }
 }
