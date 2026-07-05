@@ -2,6 +2,9 @@ package io.github.bbzq.feats.hook
 
 import android.os.Handler
 import android.os.Looper
+import android.view.View
+import android.view.ViewGroup
+import android.widget.LinearLayout
 import io.github.bbzq.ModuleSettings
 import io.github.bbzq.feats.BaseRoamingHook
 import io.github.bbzq.feats.RoamingEnv
@@ -30,13 +33,17 @@ class BottomBarHook(env: RoamingEnv) : BaseRoamingHook(env) {
             env.hookBefore(method) { param ->
                 runCatching {
                     val tabs = param.args.getOrNull(0) as? List<*> ?: return@runCatching
-                    dispatch(tabs)?.let { updated ->
-                        if (updated !== tabs) {
-                            param.args[0] = updated
-                        }
-                    }
+                    dispatch(tabs)
                 }.onFailure {
                     log("Bottom bar TabHost processor failed at ${method.declaringClass.name}.${method.name}", it)
+                }
+            }
+            env.hookAfter(method) { param ->
+                runCatching {
+                    val tabs = param.args.getOrNull(0) as? List<*> ?: return@runCatching
+                    hideTabs(param.thisObject, tabs)
+                }.onFailure {
+                    log("Bottom bar TabHost post processor failed at ${method.declaringClass.name}.${method.name}", it)
                 }
             }
         }
@@ -58,13 +65,9 @@ class BottomBarHook(env: RoamingEnv) : BaseRoamingHook(env) {
                     val host = fragment.findTabHost(tabHostClass) ?: return@runCatching
                     val getTabs = tabHostGetTabsMethods.firstOrNull { it.declaringClass.isInstance(host) }
                         ?: return@runCatching
-                    val setTabs = tabHostSetTabsMethods.firstOrNull { it.declaringClass.isInstance(host) }
-                        ?: return@runCatching
                     val tabs = getTabs.invoke(host) as? List<*> ?: return@runCatching
-                    val updated = dispatch(tabs)
-                    if (updated != null && updated.size != tabs.size) {
-                        setTabs.invoke(host, updated)
-                    }
+                    dispatch(tabs)
+                    hideTabs(host, tabs)
                 }.onFailure {
                     log("Bottom bar onViewCreated processor failed at ${method.declaringClass.name}.${method.name}", it)
                 }
@@ -79,21 +82,15 @@ class BottomBarHook(env: RoamingEnv) : BaseRoamingHook(env) {
         }
     }
 
-    private fun dispatch(tabs: List<*>): List<*>? {
+    private fun dispatch(tabs: List<*>) {
         saveCachedBottomEntries()
         val hiddenIds = ModuleSettings.getHiddenBottomBarItems(prefs)
-        val enabled = ModuleSettings.isCustomBottomBarEnabled(prefs)
         val knownItems = linkedSetOf<String>()
         val observedIds = linkedSetOf<String>()
-        val filtered = if (enabled && hiddenIds.isNotEmpty()) ArrayList<Any?>(tabs.size) else null
-        var removed = false
 
         tabs.forEach { item ->
             val entry = item?.extractBottomEntry()
-            if (entry == null) {
-                filtered?.add(item)
-                return@forEach
-            }
+            if (entry == null) return@forEach
             observedIds += entry.id
             knownItems += encodeBottomItem(
                 order = knownItems.size,
@@ -101,16 +98,36 @@ class BottomBarHook(env: RoamingEnv) : BaseRoamingHook(env) {
                 name = entry.name,
                 uri = entry.uri,
             )
-            if (filtered != null && entry.id in hiddenIds) {
-                removed = true
-            } else {
-                filtered?.add(item)
-            }
         }
 
         saveKnownItems(knownItems, preserveMissing = hiddenIds.any { it !in observedIds })
-        return if (removed) filtered else null
     }
+
+    private fun hideTabs(host: Any?, tabs: List<*>) {
+        val container = host?.findTabContainer(tabs.size) ?: return
+        val hiddenIds = if (ModuleSettings.isCustomBottomBarEnabled(prefs)) {
+            ModuleSettings.getHiddenBottomBarItems(prefs)
+        } else {
+            emptySet()
+        }
+
+        tabs.forEachIndexed { index, item ->
+            val entry = item?.extractBottomEntry() ?: return@forEachIndexed
+            val child = container.getChildAt(index) ?: return@forEachIndexed
+            val hidden = entry.id in hiddenIds
+            child.visibility = if (hidden) View.GONE else View.VISIBLE
+            child.isClickable = !hidden
+            child.isEnabled = !hidden
+            child.alpha = if (hidden) 0f else 1f
+        }
+    }
+
+    private fun Any.findTabContainer(tabCount: Int): ViewGroup? =
+        javaClass.allFields()
+            .mapNotNull { field ->
+                runCatching { field.get(this) as? LinearLayout }.getOrNull()
+            }
+            .firstOrNull { container -> container.childCount >= tabCount }
 
     private fun saveCachedBottomEntries() {
         if (cachedBottomEntriesLoaded) return
