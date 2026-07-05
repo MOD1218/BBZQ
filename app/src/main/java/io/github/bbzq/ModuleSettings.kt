@@ -21,6 +21,7 @@ object ModuleSettings {
     const val KEY_BLOCK_CHRONOS_PROMOTION_ENABLED = "block_chronos_promotion_enabled"
     const val KEY_UNLOCK_VIDEO_FEATURES_ENABLED = "unlock_video_features_enabled"
     const val KEY_UNLOCK_VIDEO_FEATURES_UI_ENABLED = "unlock_video_features_ui_enabled"
+    const val KEY_UNLOCK_HIGHEST_BITRATE_ENABLED = "unlock_highest_bitrate_enabled"
     const val KEY_AUTO_LIKE_VIDEO_DETAIL_ENABLED = "auto_like_video_detail_enabled"
     const val KEY_FIX_LIVE_QUALITY_URL_ENABLED = "fix_live_quality_url_enabled"
     const val KEY_PURIFY_HOME_RECOMMEND_AD_ENABLED = "purify_home_recommend_ad_enabled"
@@ -64,6 +65,8 @@ object ModuleSettings {
     const val KEY_FULL_NUMBER_FORMAT_ENABLED = "full_number_format_enabled"
     const val KEY_UNLOCK_COMMENT_GIF_ENABLED = "unlock_comment_gif_enabled"
     const val KEY_LAST_ACCESS_KEY = "last_access_key"
+    const val KEY_HOST_ACCOUNT_UID = "host_account_uid"
+    const val KEY_HOST_ACCOUNT_NAME = "host_account_name"
     const val KEY_HIDE_DESKTOP_ICON = "hide_desktop_icon"
     const val KEY_ACCEPT_PRERELEASE_UPDATE = "accept_prerelease_update"
     const val KEY_COMMENT_DISABLE = "vid_comment_disable"
@@ -191,6 +194,9 @@ object ModuleSettings {
         ExportableConfigSpec(KEY_UNLOCK_VIDEO_FEATURES_UI_ENABLED, ExportableValueType.BOOLEAN) {
             it.getBoolean(KEY_UNLOCK_VIDEO_FEATURES_UI_ENABLED, true)
         },
+        ExportableConfigSpec(KEY_UNLOCK_HIGHEST_BITRATE_ENABLED, ExportableValueType.BOOLEAN) {
+            it.getBoolean(KEY_UNLOCK_HIGHEST_BITRATE_ENABLED, false)
+        },
         ExportableConfigSpec(KEY_AUTO_LIKE_VIDEO_DETAIL_ENABLED, ExportableValueType.BOOLEAN) { it.getBoolean(KEY_AUTO_LIKE_VIDEO_DETAIL_ENABLED, false) },
         ExportableConfigSpec(KEY_FIX_LIVE_QUALITY_URL_ENABLED, ExportableValueType.BOOLEAN) { it.getBoolean(KEY_FIX_LIVE_QUALITY_URL_ENABLED, false) },
         ExportableConfigSpec(KEY_PURIFY_HOME_RECOMMEND_AD_ENABLED, ExportableValueType.BOOLEAN) { it.getBoolean(KEY_PURIFY_HOME_RECOMMEND_AD_ENABLED, false) },
@@ -296,6 +302,9 @@ object ModuleSettings {
     fun isUnlockVideoFeaturesUiEnabled(prefs: SharedPreferences): Boolean =
         isUnlockVideoFeaturesEnabled(prefs) &&
             prefs.getBoolean(KEY_UNLOCK_VIDEO_FEATURES_UI_ENABLED, true)
+
+    fun isUnlockHighestBitrateEnabled(prefs: SharedPreferences): Boolean =
+        prefs.getBoolean(KEY_UNLOCK_HIGHEST_BITRATE_ENABLED, false)
 
     fun isSkipVideoAdEnabled(prefs: SharedPreferences): Boolean =
         prefs.getBoolean(KEY_SKIP_VIDEO_AD_ENABLED, false)

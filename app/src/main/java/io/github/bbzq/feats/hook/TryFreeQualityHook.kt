@@ -1,7 +1,9 @@
 package io.github.bbzq.feats.hook
 
+import android.app.Application
 import io.github.bbzq.ModuleSettings
 import io.github.bbzq.feats.BaseRoamingHook
+import io.github.bbzq.feats.HostAccountResolver
 import io.github.bbzq.feats.callMethod
 import io.github.bbzq.feats.getObjectField
 import io.github.bbzq.feats.hookAfter
@@ -11,24 +13,42 @@ import java.lang.reflect.Method
 import java.lang.reflect.Proxy
 
 class TryFreeQualityHook(env: io.github.bbzq.feats.RoamingEnv) : BaseRoamingHook(env) {
+    private var trialQualityEnabled = false
+    private var highestBitrateEnabled = false
+    private val highestBitrate = HighestBitrateProcessor { message, throwable ->
+        log("HighestBitrate $message", throwable)
+    }
+    private var statsOverlay: VideoStatsOverlayController? = null
+
     override fun startHook() {
         if (env.processName != env.packageName) return
-        if (!ModuleSettings.isUnlockVideoFeaturesEnabled(prefs)) {
-            log("startHook: TryFreeQuality disabled")
+        trialQualityEnabled = ModuleSettings.isUnlockVideoFeaturesEnabled(prefs)
+        highestBitrateEnabled = ModuleSettings.isUnlockHighestBitrateEnabled(prefs)
+        if (!trialQualityEnabled && !highestBitrateEnabled) {
+            log("startHook: PlayView quality pipeline disabled")
             return
         }
         val symbols = env.symbols?.tryFreeQuality?.restore(classLoader) ?: run {
             log("startHook: TryFreeQuality skipped because symbols are unavailable")
             return
         }
+        if (highestBitrateEnabled) {
+            (env.hostContext as? Application)?.let { application ->
+                statsOverlay = VideoStatsOverlayController(
+                    application = application,
+                    resolveIdentity = ::resolveWatermarkIdentity,
+                    reportFailure = { message, throwable -> log("VideoStats $message", throwable) },
+                ).also(VideoStatsOverlayController::install)
+            }
+        }
 
         var requestHooks = 0
         var responseHooks = 0
         var uiHooks = 0
 
-        requestHooks += hookRequestMethods(symbols)
+        if (trialQualityEnabled) requestHooks += hookRequestMethods(symbols)
         responseHooks += hookResponseMethods(symbols)
-        if (ModuleSettings.isUnlockVideoFeaturesUiEnabled(prefs)) {
+        if (trialQualityEnabled && ModuleSettings.isUnlockVideoFeaturesUiEnabled(prefs)) {
             uiHooks += hookUiMethods(symbols)
         }
 
@@ -74,7 +94,7 @@ class TryFreeQualityHook(env: io.github.bbzq.feats.RoamingEnv) : BaseRoamingHook
                 }
                 env.hookAfter(method) { param ->
                     runCatching {
-                        sanitizeTrialResponse(param.result)
+                        processPlayViewResponse(param.result)
                     }.onFailure {
                         log("TryFreeQuality response after hook failed at ${method.declaringClass.name}.${method.name}", it)
                     }
@@ -125,7 +145,7 @@ class TryFreeQualityHook(env: io.github.bbzq.feats.RoamingEnv) : BaseRoamingHook
         ) { _, method, args ->
             runCatching {
                 if (method.name == "onNext") {
-                    sanitizeTrialResponse(args?.firstOrNull())
+                    processPlayViewResponse(args?.firstOrNull())
                 }
             }.onFailure {
                 log("TryFreeQuality response proxy failed at ${method.declaringClass.name}.${method.name}", it)
@@ -135,15 +155,20 @@ class TryFreeQualityHook(env: io.github.bbzq.feats.RoamingEnv) : BaseRoamingHook
         }
     }
 
-    private fun sanitizeTrialResponse(target: Any?) {
+    private fun processPlayViewResponse(target: Any?) {
         if (target == null) return
         runCatching {
-            clearTrialMarkers(target)
-            clearStreamVipMarkers(target.callMethod("getVideoInfo"))
-            clearStreamVipMarkers(target.callMethod("getVodInfo"))
-            clearStreamVipMarkers(target.callMethod("getViewInfo"))
+            if (trialQualityEnabled) {
+                clearTrialMarkers(target)
+                clearStreamVipMarkers(target.callMethod("getVideoInfo"))
+                clearStreamVipMarkers(target.callMethod("getVodInfo"))
+                clearStreamVipMarkers(target.callMethod("getViewInfo"))
+            }
+            if (highestBitrateEnabled) {
+                highestBitrate.preferHighestBitrate(target)?.let { stats -> statsOverlay?.update(stats) }
+            }
         }.onFailure {
-            log("TryFreeQuality response cleanup failed at ${target.javaClass.name}", it)
+            log("PlayView quality response processing failed at ${target.javaClass.name}", it)
         }
     }
 
@@ -189,15 +214,18 @@ class TryFreeQualityHook(env: io.github.bbzq.feats.RoamingEnv) : BaseRoamingHook
     private fun preparePlayViewRequest(request: Any?) {
         if (request == null) return
         runCatching {
-            request.callMethod("setIsNeedTrial", true)
-            request.callMethod("setIsNeedViewInfo", true)
-            request.callMethod("getVod")?.let { vod ->
-                vod.callMethod("setIsNeedTrial", true)
-                vod.callMethod("setIsNeedViewInfo", true)
+            if (trialQualityEnabled) {
+                request.callMethod("setIsNeedTrial", true)
+                request.callMethod("setIsNeedViewInfo", true)
+                request.callMethod("getVod")?.let { vod ->
+                    vod.callMethod("setIsNeedTrial", true)
+                    vod.callMethod("setIsNeedViewInfo", true)
+                }
+                request.callMethod("getViewInfo")?.let { viewInfo ->
+                    viewInfo.callMethod("setIsNeedViewInfo", true)
+                }
             }
-            request.callMethod("getViewInfo")?.let { viewInfo ->
-                viewInfo.callMethod("setIsNeedViewInfo", true)
-            }
+            if (highestBitrateEnabled) highestBitrate.prepareRequest(request)
         }.onFailure {
             log("TryFreeQuality request prep failed at ${request.javaClass.name}", it)
         }
@@ -221,4 +249,12 @@ class TryFreeQualityHook(env: io.github.bbzq.feats.RoamingEnv) : BaseRoamingHook
             original.javaClass.interfaces.forEach(::add)
             original.javaClass.takeIf { it.isInterface }?.let(::add)
         }.toTypedArray()
+
+    private fun resolveWatermarkIdentity(): UserWatermarkIdentity {
+        val snapshot = HostAccountResolver.resolve(env.hostContext, classLoader)
+        return UserWatermarkIdentity(
+            uid = snapshot.uid,
+            userName = snapshot.userName,
+        )
+    }
 }

@@ -742,6 +742,12 @@ class SettingsContentFactory(
                 ModuleSettings.KEY_UNLOCK_VIDEO_FEATURES_UI_ENABLED,
                 true,
             )
+            rows += createSwitchRow(
+                context.getString(R.string.unlock_highest_bitrate_title),
+                context.getString(R.string.unlock_highest_bitrate_summary),
+                ModuleSettings.KEY_UNLOCK_HIGHEST_BITRATE_ENABLED,
+                false,
+            )
         }
         return rows
     }
