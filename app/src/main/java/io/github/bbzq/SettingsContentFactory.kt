@@ -1901,6 +1901,7 @@ class SettingsContentFactory(
         private const val UNKNOWN_RUNTIME_VALUE = "unknown"
         private val SUPPORTED_HOST_PACKAGES = listOf(
             "tv.danmaku.bili",
+            "com.bilibili.app.blue",
             "top.nkbe.npatch",
         )
         /** 检查更新弹窗「前往下载」的兜底地址，当 Release 未给出链接时使用。 */

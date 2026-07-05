@@ -132,6 +132,7 @@ class BbzqModule : XposedModule() {
 
         private val TARGET_PACKAGES = setOf(
             "tv.danmaku.bili",
+            "com.bilibili.app.blue",
             "top.nkbe.npatch",
         )
 
