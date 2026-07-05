@@ -1,9 +1,11 @@
 package io.github.bbzq.feats.hook
 
 import android.app.Activity
+import io.github.bbzq.ModuleSettings
 import io.github.bbzq.ModuleSettingsNavigator
 import io.github.bbzq.RuntimeEnvironmentInfo
 import io.github.bbzq.feats.BaseRoamingHook
+import io.github.bbzq.feats.HostAccountResolver
 import io.github.bbzq.feats.RoamingEnv
 import io.github.bbzq.feats.callMethod
 import io.github.bbzq.feats.hookAfter
@@ -42,11 +44,16 @@ class SettingHook(env: RoamingEnv) : BaseRoamingHook(env) {
     }
 
     private fun injectEntry(fragment: Any, preferenceClass: Class<*>) {
-        if (fragment.callMethod("findPreference", ENTRY_KEY) != null) return
         val activity = fragment.callMethod("getActivity") as? Activity ?: return
+        val existing = fragment.callMethod("findPreference", ENTRY_KEY)
         val group = TARGET_GROUP_KEYS.firstNotNullOfOrNull { key ->
             fragment.callMethod("findPreference", key)
         } ?: fragment.callMethod("getPreferenceScreen") ?: return
+        if (!HostAccountResolver.resolve(activity, classLoader).loggedIn) {
+            if (existing != null) group.callMethod("removePreference", existing)
+            return
+        }
+        if (existing != null) return
 
         val entry = createPreference(fragment, activity, preferenceClass) ?: return
         group.callMethod("addPreference", entry)
@@ -88,7 +95,11 @@ class SettingHook(env: RoamingEnv) : BaseRoamingHook(env) {
             xposedFrameworkVersionCode = runCatching { xposed.frameworkVersionCode.toString() }.getOrDefault("unknown"),
             xposedFrameworkProperties = runCatching { xposed.frameworkProperties.toString() }.getOrDefault("unknown"),
             observedPrefs = prefs,
-        )
+        ).apply {
+            val account = HostAccountResolver.resolve(env.hostContext, classLoader)
+            putString(ModuleSettings.KEY_HOST_ACCOUNT_UID, if (account.loggedIn) account.uid else "")
+            putString(ModuleSettings.KEY_HOST_ACCOUNT_NAME, if (account.loggedIn) account.userName else "")
+        }
 
     private fun resolveAnchorOrder(fragment: Any): Int? {
         return ANCHOR_KEYS.firstNotNullOfOrNull { key ->

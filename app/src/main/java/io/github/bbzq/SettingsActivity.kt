@@ -11,6 +11,7 @@ import android.view.ViewGroup
 import android.view.Window
 import android.view.WindowInsets
 import android.widget.LinearLayout
+import android.widget.FrameLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -51,7 +52,7 @@ class SettingsActivity : Activity() {
         )
         contentFactory = factory
         val content = factory.createScrollView()
-        val root = LinearLayout(this).apply {
+        val contentRoot = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.parseColor("#F6F7F8"))
             addView(toolbar)
@@ -64,8 +65,27 @@ class SettingsActivity : Activity() {
             )
         }
 
+        val root = FrameLayout(this).apply {
+            addView(
+                contentRoot,
+                FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                ),
+            )
+            createAccountWatermark()?.let { watermark ->
+                addView(
+                    watermark,
+                    FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                    ),
+                )
+            }
+        }
+
         setContentView(root)
-        applyWindowInsets(root, toolbar, content)
+        applyWindowInsets(contentRoot, toolbar, content)
     }
 
     override fun onDestroy() {
@@ -273,6 +293,26 @@ class SettingsActivity : Activity() {
         PAGE_UPDATE -> getString(R.string.about_update_title)
         PAGE_CONFIG_BACKUP -> getString(R.string.about_config_backup_title)
         else -> getString(R.string.settings_title)
+    }
+
+    private fun createAccountWatermark(): AccountWatermarkView? {
+        val uid = prefs.getString(ModuleSettings.KEY_HOST_ACCOUNT_UID, "").orEmpty()
+        val userName = prefs.getString(ModuleSettings.KEY_HOST_ACCOUNT_NAME, "").orEmpty()
+        val text = listOfNotNull(
+            userName.takeIf { it.isNotBlank() },
+            uid.takeIf { it.isNotBlank() }?.let { "UID $it" },
+        ).joinToString(" · ")
+        return text.takeIf { it.isNotBlank() }
+            ?.let { AccountWatermarkView(this, it) }
+            ?: runCatching {
+                val snapshot = io.github.bbzq.feats.HostAccountResolver.resolve(this, classLoader)
+                if (!snapshot.loggedIn) return@runCatching null
+                val fallbackText = listOfNotNull(
+                    snapshot.userName.takeIf { it.isNotBlank() },
+                    snapshot.uid.takeIf { it.isNotBlank() }?.let { "UID $it" },
+                ).joinToString(" · ")
+                fallbackText.takeIf { it.isNotBlank() }?.let { AccountWatermarkView(this, it) }
+            }.getOrNull()
     }
 
     private fun applyWindowInsets(
