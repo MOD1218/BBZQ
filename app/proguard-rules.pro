@@ -20,5 +20,10 @@
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
 
-# Xposed loads this class by name from assets/xposed_init.
--keep class io.github.bbzq.BbzqModule { *; }
+# Xposed loads this class by name from META-INF/xposed/java_init.list.
+# Keep only the public entry points; R8 may optimize the private implementation.
+-keep,allowoptimization class io.github.bbzq.BbzqModule {
+    <init>();
+    void onModuleLoaded(io.github.libxposed.api.XposedModuleInterface$ModuleLoadedParam);
+    void onPackageLoaded(io.github.libxposed.api.XposedModuleInterface$PackageLoadedParam);
+}

@@ -107,7 +107,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
@@ -124,6 +125,9 @@ android {
                 "META-INF/*.version",
                 "META-INF/LICENSE*",
                 "META-INF/NOTICE*",
+                "META-INF/native-image/**",
+                "META-INF/version-control-info.textproto",
+                "kotlin-tooling-metadata.json",
                 "kotlin/**",
                 "DebugProbesKt.bin",
             )
