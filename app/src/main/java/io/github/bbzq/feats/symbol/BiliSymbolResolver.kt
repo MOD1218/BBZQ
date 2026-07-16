@@ -136,6 +136,8 @@ object BiliSymbolResolver {
     private const val HP_CHRONOS_GEMINI_OPERATION_RENDER = "ChronosPromotionHook.GeminiOperationRender"
     private const val HP_CHRONOS_GEMINI_OPERATION_UPDATE = "ChronosPromotionHook.GeminiOperationUpdate"
     private const val HP_FULL_NUMBER_FORMAT = "FullNumberFormatHook.NumberFormat"
+    private const val HP_TRIPLE_SPEED = "TripleSpeedHook.ExperimentReader"
+    private const val PLAY_SPEED_EXPERIMENT_PREF_KEY = "sp_play_speed_experiment"
 
     @Volatile
     private var memorySymbols: BiliHookSymbols? = null
@@ -320,6 +322,9 @@ object BiliSymbolResolver {
         val fullNumberFormat = scanHookPoint(HP_FULL_NUMBER_FORMAT, hookPoints, scanErrors, log) {
             scanFullNumberFormat(classLoader)
         }
+        val tripleSpeed = scanHookPoint(HP_TRIPLE_SPEED, hookPoints, scanErrors, log) {
+            scanTripleSpeed(classLoader, ::bridge)
+        }
 
         runCatching { bridge?.close() }
             .onFailure { recordError("DexKitBridge close failed: ${it.scanMessage()}") }
@@ -354,6 +359,7 @@ object BiliSymbolResolver {
             skipVideoAdAutoLike = skipVideoAdAutoLike,
             chronosPromotion = chronosPromotion,
             fullNumberFormat = fullNumberFormat,
+            tripleSpeed = tripleSpeed,
         )
     }
 
@@ -998,6 +1004,51 @@ object BiliSymbolResolver {
                 field.type != this &&
                 supplierInterface.isAssignableFrom(field.type)
         }
+
+    private fun scanTripleSpeed(
+        classLoader: ClassLoader,
+        bridge: () -> DexKitBridge?,
+    ): SymbolScanResult<TripleSpeedSymbols> {
+        val currentBridge = bridge() ?: return SymbolScanResult.Missing("DexKitBridge unavailable")
+        val methodData = runCatching {
+            currentBridge.findMethod(
+                FindMethod.create()
+                    .matcher(MethodMatcher.create().usingStrings(PLAY_SPEED_EXPERIMENT_PREF_KEY)),
+            )
+        }.getOrElse { throwable ->
+            return SymbolScanResult.Missing("play speed experiment search failed: ${throwable.scanMessage()}")
+        }
+        val restoreErrors = ArrayList<String>()
+        // The reader lives in a synthetic kotlin Function0 whose zero-arg invoke() maps the
+        // "sp_play_speed_experiment" preference int onto LongPressSpeedExperiment. The other match
+        // is the A/B writer (invokeSuspend, 1 parameter), which we exclude by shape.
+        val candidates = methodData
+            .mapNotNull { data ->
+                runCatching { data.getMethodInstance(classLoader) }.getOrElse { throwable ->
+                    restoreErrors += "${data.descriptor}: ${throwable.scanMessage()}"
+                    null
+                }
+            }
+            .filter { it.name == "invoke" && it.parameterCount == 0 && it.returnType == Any::class.java }
+            .distinctBy(Method::toGenericString)
+            .toList()
+        val reader = when {
+            candidates.size == 1 -> candidates.single()
+            candidates.isEmpty() -> return SymbolScanResult.Missing(
+                "play speed experiment reader not found: strings=${methodData.size}" +
+                    (restoreErrors.take(2).joinToString("; ").takeIf { it.isNotBlank() }?.let { ",restore=$it" } ?: ""),
+            )
+            else -> return SymbolScanResult.Missing(
+                "play speed experiment reader ambiguous: candidates=${candidates.size}," +
+                    candidates.joinToString(limit = 4) { it.declaringClass.name },
+            )
+        }
+        val symbols = TripleSpeedSymbols(
+            experimentReaderMethod = MethodDescriptor.of(reader),
+            evidence = "${reader.declaringClass.name}.${reader.name},strings=${methodData.size}",
+        )
+        return SymbolScanResult.Found(symbols, symbols.evidence, symbols.evidence)
+    }
 
     private fun scanMineProfile(
         classLoader: ClassLoader,

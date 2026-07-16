@@ -42,6 +42,7 @@ data class BiliHookSymbols(
     val skipVideoAdAutoLike: SkipVideoAdAutoLikeSymbols? = null,
     val chronosPromotion: ChronosPromotionSymbols? = null,
     val fullNumberFormat: FullNumberFormatSymbols? = null,
+    val tripleSpeed: TripleSpeedSymbols? = null,
 ) {
     fun isUsableWith(expectedFingerprint: String): Boolean =
         cacheSchemaVersion == CACHE_SCHEMA_VERSION &&
@@ -80,9 +81,10 @@ data class BiliHookSymbols(
         .putOpt("skipVideoAdAutoLike", skipVideoAdAutoLike?.toJson())
         .putOpt("chronosPromotion", chronosPromotion?.toJson())
         .putOpt("fullNumberFormat", fullNumberFormat?.toJson())
+        .putOpt("tripleSpeed", tripleSpeed?.toJson())
 
     companion object {
-        const val CACHE_SCHEMA_VERSION = 28
+        const val CACHE_SCHEMA_VERSION = 29
 
         fun fromJson(raw: String?): BiliHookSymbols? {
             if (raw.isNullOrBlank()) return null
@@ -124,6 +126,7 @@ data class BiliHookSymbols(
                         ?.let(SkipVideoAdAutoLikeSymbols::fromJson),
                     chronosPromotion = obj.optJSONObject("chronosPromotion")?.let(ChronosPromotionSymbols::fromJson),
                     fullNumberFormat = obj.optJSONObject("fullNumberFormat")?.let(FullNumberFormatSymbols::fromJson),
+                    tripleSpeed = obj.optJSONObject("tripleSpeed")?.let(TripleSpeedSymbols::fromJson),
                 )
             }.getOrNull()
         }
@@ -131,7 +134,7 @@ data class BiliHookSymbols(
 }
 
 object DexKitRuleVersions {
-    const val CURRENT = 45
+    const val CURRENT = 46
 }
 
 data class HookPointStatus(
@@ -1877,6 +1880,31 @@ data class ConstructorDescriptor(
         )
     }
 }
+
+data class TripleSpeedSymbols(
+    val experimentReaderMethod: MethodDescriptor,
+    val evidence: String,
+) {
+    fun toJson(): JSONObject = JSONObject()
+        .put("experimentReaderMethod", experimentReaderMethod.toJson())
+        .put("evidence", evidence)
+
+    fun restore(classLoader: ClassLoader): RestoredTripleSpeedSymbols? {
+        val method = experimentReaderMethod.restoreOptional(classLoader) ?: return null
+        return RestoredTripleSpeedSymbols(method)
+    }
+
+    companion object {
+        fun fromJson(obj: JSONObject): TripleSpeedSymbols = TripleSpeedSymbols(
+            experimentReaderMethod = MethodDescriptor.fromJson(obj.getJSONObject("experimentReaderMethod")),
+            evidence = obj.optString("evidence", "-"),
+        )
+    }
+}
+
+data class RestoredTripleSpeedSymbols(
+    val experimentReaderMethod: Method,
+)
 
 data class MethodDescriptor(
     val declaringClassName: String,

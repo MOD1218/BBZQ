@@ -454,6 +454,12 @@ class SettingsContentFactory(
             ModuleSettings.KEY_HIDE_PLAYER_PORTRAIT_CONTROL_ENABLED,
             false,
         )
+        rows += createSwitchRow(
+            context.getString(R.string.playback_triple_speed_title),
+            context.getString(R.string.playback_triple_speed_summary),
+            ModuleSettings.KEY_PLAYER_TRIPLE_SPEED_ENABLED,
+            false,
+        )
         return rows
     }
 

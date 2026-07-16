@@ -38,6 +38,7 @@ import io.github.bbzq.feats.hook.VideoDetailBannerAdHook
 import io.github.bbzq.feats.hook.FullNumberFormatHook
 import io.github.bbzq.feats.hook.MineProfileHook
 import io.github.bbzq.feats.hook.PlayerUiHook
+import io.github.bbzq.feats.hook.TripleSpeedHook
 import io.github.bbzq.feats.hook.WoMicHook
 import io.github.bbzq.feats.symbol.BiliHookSymbols
 import io.github.bbzq.feats.symbol.BiliSymbolResolver
@@ -136,6 +137,7 @@ object RoamingRuntime {
                 ::StoryComponentAlphaHook,
                 ::VideoDetailBannerAdHook,
                 ::PlayerUiHook,
+                ::TripleSpeedHook,
                 ::TryFreeQualityHook,
                 ::ChronosPromotionHook,
                 ::SkipVideoAdHook,
